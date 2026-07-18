@@ -126,15 +126,25 @@
           <div class="action-stack">
             <button id="render-png" class="primary" type="button">Download PNG</button>
             <button id="play-motion" type="button">Preview Motion</button>
-            <button id="record-motion" type="button">Record WebM</button>
+            <button id="record-motion" type="button">Generate Video</button>
             <button id="stop-motion" type="button">Stop</button>
           </div>
 
-          <p class="small-print" id="export-status">Make a PNG image or browser-recorded WebM from the loaded collection.</p>
+          <p class="small-print" id="export-status">Choose a visual, then generate a short video from the loaded collection.</p>
         </aside>
 
         <div class="canvas-stage">
           <canvas id="export-canvas" width="1080" height="1080"></canvas>
+          <div id="recording-overlay" class="recording-overlay" hidden aria-live="polite">
+            <div class="recording-card">
+              <span>Generating video</span>
+              <strong id="recording-title">Recording motion</strong>
+              <div class="recording-progress" aria-hidden="true">
+                <span id="recording-progress-bar"></span>
+              </div>
+              <p id="recording-time">0:00 / 0:30</p>
+            </div>
+          </div>
         </div>
       </div>
     </section>

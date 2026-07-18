@@ -10,6 +10,9 @@ const state = {
   animationStartedAt: 0,
   recorder: null,
   recordingStopTimer: null,
+  recordingProgressFrame: null,
+  recordingStartedAt: 0,
+  recordingDurationSeconds: 0,
   chunks: [],
 };
 
@@ -45,6 +48,10 @@ const els = {
   recordMotion: document.getElementById('record-motion'),
   stopMotion: document.getElementById('stop-motion'),
   exportStatus: document.getElementById('export-status'),
+  recordingOverlay: document.getElementById('recording-overlay'),
+  recordingTitle: document.getElementById('recording-title'),
+  recordingProgressBar: document.getElementById('recording-progress-bar'),
+  recordingTime: document.getElementById('recording-time'),
   canvas: document.getElementById('export-canvas'),
 };
 
@@ -420,6 +427,7 @@ function renderStudio() {
   applyCanvasFormat();
   const mode = els.visualMode.value;
   els.sliceControls.style.display = mode === 'poster' ? 'grid' : 'none';
+  updateExportControls();
   if (mode === 'poster') {
     drawPoster();
   } else {
@@ -911,6 +919,7 @@ function startMotion() {
   };
   state.animationId = requestAnimationFrame(tick);
   els.exportStatus.textContent = `Previewing ${modeLabel(mode).toLowerCase()}.`;
+  updateExportControls();
 }
 
 function stopAnimationFrameOnly() {
@@ -926,11 +935,13 @@ function stopMotion() {
     window.clearTimeout(state.recordingStopTimer);
     state.recordingStopTimer = null;
   }
+  stopRecordingProgress();
   if (state.recorder && state.recorder.state !== 'inactive') {
     state.recorder.stop();
   }
   state.recorder = null;
   els.exportStatus.textContent = 'Motion stopped.';
+  updateExportControls();
   if (state.collection.length) {
     renderStudio();
   }
@@ -942,12 +953,17 @@ function recordMotion() {
     return;
   }
 
+  if (isRecording()) {
+    return;
+  }
+
   if (state.recordingStopTimer) {
     window.clearTimeout(state.recordingStopTimer);
     state.recordingStopTimer = null;
   }
 
   const durationSeconds = getRecordDurationSeconds();
+  const mode = els.visualMode.value === 'poster' ? 'river' : els.visualMode.value;
   startMotion();
   const stream = els.canvas.captureStream(30);
   const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
@@ -967,16 +983,94 @@ function recordMotion() {
     }
     const blob = new Blob(state.chunks, { type: 'video/webm' });
     downloadBlob(blob, `${slugify(els.title.value)}-${els.visualMode.value}.webm`);
-    els.exportStatus.textContent = 'WebM downloaded. MP4 export can come later with Remotion.';
+    els.exportStatus.textContent = 'Video downloaded.';
+    stopRecordingProgress({ complete: true });
+    state.recorder = null;
     stopAnimationFrameOnly();
+    updateExportControls();
   };
   state.recorder.start();
-  els.exportStatus.textContent = `Recording ${durationSeconds} seconds of motion in this browser...`;
+  startRecordingProgress(durationSeconds, mode);
+  els.exportStatus.textContent = `Generating a ${durationSeconds}-second video in this browser.`;
   state.recordingStopTimer = window.setTimeout(() => {
     if (state.recorder && state.recorder.state !== 'inactive') {
       state.recorder.stop();
     }
   }, durationSeconds * 1000);
+  updateExportControls();
+}
+
+function updateExportControls() {
+  const isPoster = els.visualMode.value === 'poster';
+  const recording = isRecording();
+  const hasActiveMotion = Boolean(state.animationId) || recording;
+
+  els.renderPng.hidden = !isPoster;
+  els.playMotion.hidden = isPoster;
+  els.recordMotion.hidden = isPoster;
+  els.stopMotion.hidden = isPoster || !hasActiveMotion;
+
+  els.renderPng.classList.toggle('primary', isPoster);
+  els.recordMotion.classList.toggle('primary', !isPoster);
+  els.recordMotion.textContent = recording ? 'Generating...' : 'Generate Video';
+
+  els.renderPng.disabled = recording;
+  els.playMotion.disabled = recording;
+  els.recordMotion.disabled = recording;
+}
+
+function isRecording() {
+  return Boolean(state.recorder && state.recorder.state !== 'inactive');
+}
+
+function startRecordingProgress(durationSeconds, mode) {
+  stopRecordingProgress();
+  state.recordingStartedAt = performance.now();
+  state.recordingDurationSeconds = durationSeconds;
+  els.recordingOverlay.hidden = false;
+  els.recordingTitle.textContent = `${modeLabel(mode)} video`;
+  updateRecordingProgress(0);
+
+  const tick = () => {
+    const elapsed = (performance.now() - state.recordingStartedAt) / 1000;
+    updateRecordingProgress(elapsed);
+    if (elapsed < state.recordingDurationSeconds && isRecording()) {
+      state.recordingProgressFrame = requestAnimationFrame(tick);
+    }
+  };
+  state.recordingProgressFrame = requestAnimationFrame(tick);
+}
+
+function updateRecordingProgress(elapsedSeconds) {
+  const duration = Math.max(1, state.recordingDurationSeconds || getRecordDurationSeconds());
+  const elapsed = clamp(elapsedSeconds, 0, duration);
+  const percent = (elapsed / duration) * 100;
+  els.recordingProgressBar.style.width = `${percent.toFixed(1)}%`;
+  els.recordingTime.textContent = `${formatTime(elapsed)} / ${formatTime(duration)}`;
+}
+
+function stopRecordingProgress({ complete = false } = {}) {
+  if (state.recordingProgressFrame) {
+    cancelAnimationFrame(state.recordingProgressFrame);
+    state.recordingProgressFrame = null;
+  }
+  if (complete) {
+    updateRecordingProgress(state.recordingDurationSeconds || getRecordDurationSeconds());
+  } else {
+    els.recordingProgressBar.style.width = '0%';
+  }
+  window.setTimeout(() => {
+    if (!isRecording()) {
+      els.recordingOverlay.hidden = true;
+    }
+  }, complete ? 450 : 0);
+}
+
+function formatTime(seconds) {
+  const wholeSeconds = Math.round(seconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainingSeconds = wholeSeconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
 }
 
 function downloadPng() {
@@ -1122,9 +1216,9 @@ function setError(message) {
 
 function getSourceStatus() {
   if (state.source === 'discogs') {
-    return 'Loaded from public Discogs data. Exports are ready; remote covers may need a future cache for perfect PNG reliability.';
+    return 'Loaded from public Discogs data. Choose a motion visual and generate a video.';
   }
-  return 'Demo collection loaded. PNG slices and motion previews are ready.';
+  return 'Demo collection loaded. Choose a motion visual and generate a video.';
 }
 
 function slugify(value) {
