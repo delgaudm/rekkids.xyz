@@ -4,17 +4,29 @@ Rekkids is a local-first Discogs collection visualizer. The name is a nod to the
 
 The project is aimed at vinyl communities where people want to share a collection without turning every cover into an unreadable thumbnail. The current prototype keeps the app static and uses local `collection.json` plus cached cover art in `covers/`.
 
+## Screenshots
+
+The homepage opens with a live demo and visual samples so visitors can see what Rekkids makes before entering a Discogs username.
+
+![Rekkids homepage with sample visuals](docs/screenshots/homepage-maker.jpg)
+
+The maker view pairs export controls with a live canvas preview for PNG and browser-recorded WebM output.
+
+![Rekkids maker export UI showing Billboard Rush](docs/screenshots/export-maker.jpg)
+
 ## What It Does Now
 
 - Loads a local Discogs-derived collection from `collection.json`.
 - Can fetch a public Discogs collection from a username in the UI or `?u=<discogs-username>`.
-- Shows a searchable/sortable album wall.
-- Provides a Visual Lab with:
+- Shows a sample-first maker homepage with live previews of the visual styles.
+- Provides a maker UI with:
   - readable PNG slices that preserve cover size,
-  - a Cover River motion preview,
   - a Billboard Rush motion preview,
+  - a Cover River motion preview,
   - a Crate Flip motion preview,
+  - a Record Pile motion preview,
   - client-side WebM recording when supported by the browser.
+- Keeps a searchable/sortable Browse view for checking the loaded collection.
 
 ## Run Locally
 
