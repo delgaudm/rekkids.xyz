@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 .venv/
+dist/
+.netlify/
 
 # Local/back-up artifacts from the pre-git prototype.
 *.zip
