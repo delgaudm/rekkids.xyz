@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rekkids - Discogs Collection Image Maker</title>
+  <meta name="description" content="Turn a public Discogs collection into readable images and short record-wall videos. No accounts, no tracking, nothing stored.">
+  <link rel="stylesheet" href="style.css?v=20260717-11">
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand-lockup">
+      <p class="eyebrow">Rekkids</p>
+      <h1>Turn a Discogs collection into a postable record wall.</h1>
+      <p class="lede">A free, no-signup tool for making readable collection images and short cover animations.</p>
+    </div>
+
+    <div class="collection-status" aria-live="polite">
+      <span id="collection-count">Loading...</span>
+      <span id="artist-count"></span>
+    </div>
+
+    <div class="loader-block">
+      <form class="user-loader" id="user-loader">
+        <label>
+          <span>Swap in your collection</span>
+          <input id="discogs-username" type="text" autocomplete="off" placeholder="enter Discogs username">
+        </label>
+        <button class="primary" type="submit">Load</button>
+        <button id="load-local" type="button">Reset demo</button>
+      </form>
+      <p class="privacy-line">No accounts, no tracking, nothing stored. Rekkids reads public Discogs pages only.</p>
+    </div>
+  </header>
+
+  <nav class="app-tabs" aria-label="Primary views">
+    <button class="tab-button active" data-view="browse" type="button">Collection Wall</button>
+    <button class="tab-button" data-view="studio" type="button">Export Lab</button>
+  </nav>
+
+  <main>
+    <section id="browse-view" class="view active" aria-labelledby="browse-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow" id="collection-source-label">Demo collection loaded</p>
+          <h2 id="browse-title">Pick a wall, then make it yours.</h2>
+        </div>
+        <div class="controls-row">
+          <label>
+            <span>Search</span>
+            <input id="search-input" type="search" placeholder="artist, album, release id">
+          </label>
+          <label>
+            <span>Sort</span>
+            <select id="sort-select">
+              <option value="artist">Artist</option>
+              <option value="title">Album</option>
+              <option value="random">Random</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div id="grid-container" class="record-grid" aria-live="polite"></div>
+      <div class="message" id="loading">Loading collection...</div>
+      <div class="message error" id="error"></div>
+    </section>
+
+    <section id="studio-view" class="view" aria-labelledby="studio-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Export lab</p>
+          <h2 id="studio-title">Make something worth posting.</h2>
+        </div>
+        <p class="studio-note">Export readable slices, moving cover rivers, billboard rushes, crate flips, or loose record piles from the collection above.</p>
+      </div>
+
+      <div class="studio-layout">
+        <aside class="studio-panel">
+          <label>
+            <span>Visual</span>
+            <select id="visual-mode">
+              <option value="poster">Image slices</option>
+              <option value="river">Cover river</option>
+              <option value="billboard">Billboard rush</option>
+              <option value="crate">Crate flip</option>
+              <option value="pile">Record pile</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Format</span>
+            <select id="format-select">
+              <option value="square">Square 1080</option>
+              <option value="vertical">Vertical 1080 x 1350</option>
+              <option value="wide">Wide 1920 x 1080</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Cover size <strong id="cover-size-value">168</strong>px</span>
+            <input id="cover-size" type="range" min="120" max="260" value="168">
+          </label>
+
+          <label>
+            <span>Duration <strong id="record-duration-value">30</strong>s</span>
+            <input id="record-duration" type="range" min="10" max="120" step="5" value="30">
+          </label>
+
+          <label>
+            <span>File name</span>
+            <input id="export-title" type="text" value="rekkids-export">
+          </label>
+
+          <label class="identity-toggle">
+            <input id="show-username" type="checkbox" checked>
+            <span>Show Discogs username in footer</span>
+          </label>
+
+          <div class="slice-controls" id="slice-controls">
+            <button id="prev-slice" type="button" aria-label="Previous slice">Prev</button>
+            <span id="slice-label">Slice 1 of 1</span>
+            <button id="next-slice" type="button" aria-label="Next slice">Next</button>
+          </div>
+
+          <div class="action-stack">
+            <button id="render-png" class="primary" type="button">Download PNG</button>
+            <button id="play-motion" type="button">Preview Motion</button>
+            <button id="record-motion" type="button">Record WebM</button>
+            <button id="stop-motion" type="button">Stop</button>
+          </div>
+
+          <p class="small-print" id="export-status">Make a PNG image or browser-recorded WebM from the loaded collection.</p>
+        </aside>
+
+        <div class="canvas-stage">
+          <canvas id="export-canvas" width="1080" height="1080"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Rekkids runs in your browser and works from public Discogs collection data.</span>
+    <a href="https://www.discogs.com/" target="_blank" rel="noopener noreferrer">Data from Discogs</a>
+  </footer>
+
+  <script src="script.js?v=20260717-11"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+
+# Local/back-up artifacts from the pre-git prototype.
+*.zip
+*.bak
+collection-original.json
+Rekkids.xyz-local first version/

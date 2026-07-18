@@ -1,0 +1,29 @@
+{# --- START OF FILE search.njk --- #}
+---
+layout: base.njk
+title: Search & Browse Microphones
+permalink: /search/index.html # Ensures it's available at /search/
+---
+
+<h1>Search & Browse Microphones</h1>
+
+<div class="search-layout">
+  {% include "filters.njk" %} {# The filter sidebar #}
+
+  <div class="search-results-area">
+    <div class="search-controls">
+       <input type="search" id="search-input" placeholder="Filter by name, brand..." aria-label="Filter results">
+       <span id="results-count"></span> {# JS will update this #}
+       {# Add Sort dropdown later if needed #}
+    </div>
+
+    <div id="results" class="results-grid">
+      {# JavaScript will populate this area with mic cards #}
+      <p class="loading-message">Loading microphones...</p>
+    </div>
+
+    {# Add pagination controls if needed #}
+    {# <div id="pagination"></div> #}
+  </div>
+</div>
+{# --- END OF FILE search.njk --- #}
