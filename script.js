@@ -19,6 +19,7 @@ const els = {
   sourceLabel: document.getElementById('collection-source-label'),
   tabs: document.querySelectorAll('.tab-button'),
   views: document.querySelectorAll('.view'),
+  sampleCards: document.querySelectorAll('.sample-card[data-sample-mode]'),
   grid: document.getElementById('grid-container'),
   loading: document.getElementById('loading'),
   error: document.getElementById('error'),
@@ -70,6 +71,8 @@ async function init() {
   const urlUsername = getUsernameFromUrl();
   if (urlUsername) {
     els.username.value = urlUsername;
+  } else {
+    els.username.value = '';
   }
   try {
     await loadCollection(urlUsername ? { username: urlUsername } : { local: true });
@@ -91,16 +94,26 @@ function bindEvents() {
     }
     updateUrlUsername(username);
     await loadCollection({ username });
+    switchView('studio', { scroll: true });
   });
 
   els.loadLocal.addEventListener('click', async () => {
     clearUrlUsername();
     els.username.value = '';
     await loadCollection({ local: true });
+    switchView('studio', { scroll: true });
   });
 
   els.tabs.forEach((button) => {
     button.addEventListener('click', () => switchView(button.dataset.view));
+  });
+
+  els.sampleCards.forEach((button) => {
+    button.addEventListener('click', () => {
+      els.visualMode.value = button.dataset.sampleMode;
+      syncSampleCards();
+      switchView('studio', { scroll: true });
+    });
   });
 
   els.search.addEventListener('input', applyBrowseControls);
@@ -113,6 +126,9 @@ function bindEvents() {
       }
       if (input === els.recordDuration) {
         els.recordDurationValue.textContent = els.recordDuration.value;
+      }
+      if (input === els.visualMode) {
+        syncSampleCards();
       }
       state.currentSlice = clamp(state.currentSlice, 0, Math.max(0, getSliceCount() - 1));
       renderStudio();
@@ -258,12 +274,21 @@ function normalizeCollectionItem(item, { preferLocalCover = false } = {}) {
   };
 }
 
-function switchView(viewName) {
+function switchView(viewName, { scroll = false } = {}) {
   els.tabs.forEach((button) => button.classList.toggle('active', button.dataset.view === viewName));
   els.views.forEach((view) => view.classList.toggle('active', view.id === `${viewName}-view`));
   if (viewName === 'studio') {
     renderStudio();
   }
+  if (scroll) {
+    document.getElementById(`${viewName}-view`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+}
+
+function syncSampleCards() {
+  els.sampleCards.forEach((button) => {
+    button.classList.toggle('active', button.dataset.sampleMode === els.visualMode.value);
+  });
 }
 
 function dedupeCollection(items) {

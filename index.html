@@ -5,74 +5,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rekkids - Discogs Collection Image Maker</title>
   <meta name="description" content="Turn a public Discogs collection into readable images and short record-wall videos. No accounts, no tracking, nothing stored.">
-  <link rel="stylesheet" href="style.css?v=20260717-11">
+  <link rel="stylesheet" href="style.css?v=20260718-3">
 </head>
 <body>
   <header class="site-header">
-    <div class="brand-lockup">
+    <div class="hero-copy">
       <p class="eyebrow">Rekkids</p>
-      <h1>Turn a Discogs collection into a postable record wall.</h1>
-      <p class="lede">A free, no-signup tool for making readable collection images and short cover animations.</p>
+      <h1>Make a Reddit-ready visual from your Discogs collection.</h1>
+      <p class="lede">Start with the live demo, then swap in your public Discogs username when you are ready.</p>
+
+      <div class="collection-status" aria-live="polite">
+        <span id="collection-count">Loading...</span>
+        <span id="artist-count"></span>
+      </div>
+
+      <div class="loader-block">
+        <form class="user-loader" id="user-loader">
+          <label>
+            <span>Discogs username</span>
+            <input id="discogs-username" type="text" autocomplete="off" value="" placeholder="Your Discogs name">
+          </label>
+          <button class="primary" type="submit">Make mine</button>
+          <button id="load-local" type="button">Demo</button>
+        </form>
+        <p class="privacy-line">No accounts, no tracking, nothing stored. Public Discogs collections only.</p>
+        <div class="message" id="loading">Loading collection...</div>
+        <div class="message error" id="error"></div>
+      </div>
     </div>
 
-    <div class="collection-status" aria-live="polite">
-      <span id="collection-count">Loading...</span>
-      <span id="artist-count"></span>
-    </div>
-
-    <div class="loader-block">
-      <form class="user-loader" id="user-loader">
-        <label>
-          <span>Swap in your collection</span>
-          <input id="discogs-username" type="text" autocomplete="off" placeholder="enter Discogs username">
-        </label>
-        <button class="primary" type="submit">Load</button>
-        <button id="load-local" type="button">Reset demo</button>
-      </form>
-      <p class="privacy-line">No accounts, no tracking, nothing stored. Rekkids reads public Discogs pages only.</p>
+    <div class="sample-showcase" aria-label="Sample Rekkids visuals">
+      <button class="sample-card featured active" type="button" data-sample-mode="billboard" aria-label="Use Billboard rush">
+        <video src="SAMPLES/sample-rekkids-billboard.webm" autoplay muted loop playsinline></video>
+        <span>Billboard rush</span>
+      </button>
+      <div class="sample-grid">
+        <button class="sample-card" type="button" data-sample-mode="pile" aria-label="Use Record pile">
+          <video src="SAMPLES/sample-rekkids-pile.webm" autoplay muted loop playsinline></video>
+          <span>Record pile</span>
+        </button>
+        <button class="sample-card" type="button" data-sample-mode="crate" aria-label="Use Crate flip">
+          <video src="SAMPLES/sample-rekkids-crate.webm" autoplay muted loop playsinline></video>
+          <span>Crate flip</span>
+        </button>
+        <button class="sample-card" type="button" data-sample-mode="river" aria-label="Use Cover river">
+          <video src="SAMPLES/sample-rekkids-river.webm" autoplay muted loop playsinline></video>
+          <span>Cover river</span>
+        </button>
+        <button class="sample-card" type="button" data-sample-mode="poster" aria-label="Use Image slices">
+          <img src="SAMPLES/sample-rekkids-slice.png" alt="">
+          <span>Image slices</span>
+        </button>
+      </div>
     </div>
   </header>
 
   <nav class="app-tabs" aria-label="Primary views">
-    <button class="tab-button active" data-view="browse" type="button">Collection Wall</button>
-    <button class="tab-button" data-view="studio" type="button">Export Lab</button>
+    <button class="tab-button active" data-view="studio" type="button">Make</button>
+    <button class="tab-button" data-view="browse" type="button">Browse</button>
   </nav>
 
   <main>
-    <section id="browse-view" class="view active" aria-labelledby="browse-title">
+    <section id="studio-view" class="view active" aria-labelledby="studio-title">
       <div class="section-heading">
         <div>
-          <p class="eyebrow" id="collection-source-label">Demo collection loaded</p>
-          <h2 id="browse-title">Pick a wall, then make it yours.</h2>
+          <p class="eyebrow">Maker</p>
+          <h2 id="studio-title">Choose a visual and export it.</h2>
         </div>
-        <div class="controls-row">
-          <label>
-            <span>Search</span>
-            <input id="search-input" type="search" placeholder="artist, album, release id">
-          </label>
-          <label>
-            <span>Sort</span>
-            <select id="sort-select">
-              <option value="artist">Artist</option>
-              <option value="title">Album</option>
-              <option value="random">Random</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <div id="grid-container" class="record-grid" aria-live="polite"></div>
-      <div class="message" id="loading">Loading collection...</div>
-      <div class="message error" id="error"></div>
-    </section>
-
-    <section id="studio-view" class="view" aria-labelledby="studio-title">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">Export lab</p>
-          <h2 id="studio-title">Make something worth posting.</h2>
-        </div>
-        <p class="studio-note">Export readable slices, moving cover rivers, billboard rushes, crate flips, or loose record piles from the collection above.</p>
+        <p class="studio-note">Start with Billboard rush, or pick another look for a still image or short WebM.</p>
       </div>
 
       <div class="studio-layout">
@@ -82,7 +82,7 @@
             <select id="visual-mode">
               <option value="poster">Image slices</option>
               <option value="river">Cover river</option>
-              <option value="billboard">Billboard rush</option>
+              <option value="billboard" selected>Billboard rush</option>
               <option value="crate">Crate flip</option>
               <option value="pile">Record pile</option>
             </select>
@@ -138,6 +138,30 @@
         </div>
       </div>
     </section>
+
+    <section id="browse-view" class="view" aria-labelledby="browse-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow" id="collection-source-label">Demo collection loaded</p>
+          <h2 id="browse-title">Browse the loaded collection.</h2>
+        </div>
+        <div class="controls-row">
+          <label>
+            <span>Search</span>
+            <input id="search-input" type="search" placeholder="artist, album, release id">
+          </label>
+          <label>
+            <span>Sort</span>
+            <select id="sort-select">
+              <option value="artist">Artist</option>
+              <option value="title">Album</option>
+              <option value="random">Random</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="grid-container" class="record-grid" aria-live="polite"></div>
+    </section>
   </main>
 
   <footer>
@@ -145,6 +169,6 @@
     <a href="https://www.discogs.com/" target="_blank" rel="noopener noreferrer">Data from Discogs</a>
   </footer>
 
-  <script src="script.js?v=20260717-11"></script>
+  <script src="script.js?v=20260718-3"></script>
 </body>
 </html>
