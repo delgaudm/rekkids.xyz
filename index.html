@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rekkids - Discogs Collection Image Maker</title>
   <meta name="description" content="Turn a public Discogs collection into readable images and short record-wall videos. No accounts, no tracking, nothing stored.">
-  <link rel="stylesheet" href="style.css?v=20260718-3">
+  <link rel="stylesheet" href="style.css?v=20260719-1">
 </head>
 <body>
   <header class="site-header">
@@ -91,6 +91,14 @@
       </div>
 
       <div class="studio-layout">
+        <div class="studio-gate" id="studio-gate">
+          <div class="studio-gate-card">
+            <p class="eyebrow">Your collection</p>
+            <h3>Enter your Discogs username to start making.</h3>
+            <p>We’ll load your public collection only when you ask us to.</p>
+            <button class="primary" id="studio-gate-action" type="button">Enter Discogs username</button>
+          </div>
+        </div>
         <aside class="studio-panel">
           <label>
             <span>Visual</span>
@@ -212,6 +220,6 @@
     <a href="https://www.discogs.com/" target="_blank" rel="noopener noreferrer">Data from Discogs</a>
   </footer>
 
-  <script src="script.js?v=20260718-3"></script>
+  <script src="script.js?v=20260719-1"></script>
 </body>
 </html>

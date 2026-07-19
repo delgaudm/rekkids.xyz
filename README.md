@@ -17,6 +17,8 @@ The maker view pairs export controls with a live canvas preview for PNG and brow
 ## What It Does Now
 
 - Loads a local Discogs-derived collection from `collection.json`.
+- Leaves the maker gated on anonymous visits, so sample videos do not trigger collection or cover requests.
+- Uses bundled covers only for the optional demo and never falls back to Discogs for missing demo art.
 - Can fetch a public Discogs collection from a username in the UI or `?u=<discogs-username>`.
 - Loads covers from up to 800 sampled public collection entries to keep request volume, load time, decoded-image memory, and canvas/video generation manageable in the browser.
 - Samples metadata pages across large collections so records near the end have a chance to appear instead of always taking the first 800.

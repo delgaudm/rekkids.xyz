@@ -67,6 +67,8 @@ const els = {
   recordingTitle: document.getElementById('recording-title'),
   recordingProgressBar: document.getElementById('recording-progress-bar'),
   recordingTime: document.getElementById('recording-time'),
+  studioGate: document.getElementById('studio-gate'),
+  studioGateAction: document.getElementById('studio-gate-action'),
   canvas: document.getElementById('export-canvas'),
 };
 
@@ -97,14 +99,31 @@ async function init() {
   } else {
     els.username.value = '';
   }
+  if (!urlUsername) {
+    initializeGuestStudio();
+    return;
+  }
   try {
-    await loadCollection(urlUsername ? { username: urlUsername, mediaFilter: els.mediaFilter.value } : { local: true });
+    await loadCollection({ username: urlUsername, mediaFilter: els.mediaFilter.value });
   } catch (error) {
     els.error.textContent = `Could not load collection: ${error.message}`;
     els.error.style.display = 'block';
   } finally {
     els.loading.style.display = 'none';
   }
+}
+
+function initializeGuestStudio() {
+  state.collection = [];
+  state.visualItems = [];
+  state.sorted = [];
+  state.filtered = [];
+  state.username = '';
+  renderGrid();
+  renderStudio();
+  setStudioGateVisible(true);
+  els.exportStatus.textContent = 'Enter a Discogs username to load a collection.';
+  els.loading.style.display = 'none';
 }
 
 function bindEvents() {
@@ -189,6 +208,10 @@ function bindEvents() {
   els.playMotion.addEventListener('click', startMotion);
   els.recordMotion.addEventListener('click', recordMotion);
   els.stopMotion.addEventListener('click', stopMotion);
+  els.studioGateAction.addEventListener('click', () => {
+    els.username.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    window.setTimeout(() => els.username.focus(), 350);
+  });
 }
 
 async function loadCollection({ username = '', local = false, mediaFilter = 'all' }) {
@@ -227,6 +250,7 @@ async function loadCollection({ username = '', local = false, mediaFilter = 'all
     updateStats();
     renderGrid();
     renderStudio();
+    setStudioGateVisible(false);
     els.exportStatus.textContent = getSourceStatus();
     preloadImages(state.collection, loadGeneration, { delayMs: local ? 0 : 400 }).catch(() => {
       if (loadGeneration === state.imageLoadGeneration) {
@@ -392,11 +416,17 @@ function normalizeCollectionItem(item, { preferLocalCover = false } = {}) {
     title: item.title || 'Untitled',
     release_id: releaseId,
     image_original_url: item.image_original_url || remote,
-    image_remote: remote,
+    image_remote: preferLocalCover ? '' : remote,
     image: preferLocalCover && releaseId ? `covers/${releaseId}.jpg` : (item.image || remote),
     media_types: Array.isArray(item.media_types) ? item.media_types : [],
     discogs_url: item.discogs_url || `https://www.discogs.com/release/${releaseId}`,
   };
+}
+
+function setStudioGateVisible(visible) {
+  if (els.studioGate) {
+    els.studioGate.hidden = !visible;
+  }
 }
 
 function switchView(viewName, { scroll = false } = {}) {

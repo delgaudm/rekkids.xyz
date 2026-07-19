@@ -465,10 +465,53 @@ label span {
 }
 
 .studio-layout {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(250px, 340px) minmax(0, 1fr);
   gap: 22px;
   align-items: start;
+}
+
+.studio-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+  padding: 24px;
+  background: rgba(245, 241, 234, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.studio-gate[hidden] {
+  display: none;
+}
+
+.studio-gate-card {
+  width: min(460px, 100%);
+  padding: clamp(24px, 5vw, 42px);
+  color: var(--panel);
+  text-align: center;
+  background: rgba(20, 17, 15, 0.96);
+  border: 1px solid rgba(255, 250, 241, 0.18);
+  box-shadow: 0 24px 70px rgba(20, 17, 15, 0.3);
+}
+
+.studio-gate-card .eyebrow {
+  margin-bottom: 12px;
+}
+
+.studio-gate-card h3 {
+  margin: 0;
+  font-size: clamp(1.6rem, 4vw, 2.35rem);
+  line-height: 1.03;
+}
+
+.studio-gate-card p:not(.eyebrow) {
+  margin: 16px 0 22px;
+  color: rgba(255, 250, 241, 0.72);
+  line-height: 1.5;
 }
 
 .studio-panel {
