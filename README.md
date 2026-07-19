@@ -28,6 +28,7 @@ The maker view pairs export controls with a live canvas preview for PNG and brow
 - Provides a maker UI with:
   - readable PNG slices that preserve cover size,
   - a Billboard Rush motion preview,
+  - an experimental Cover Kinetics camera flight across a sprawling collection,
   - a texture-mapped Record Dungeon walkthrough,
   - a Cover River motion preview,
   - a Crate Flip motion preview,

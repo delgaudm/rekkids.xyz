@@ -13,6 +13,7 @@ const state = {
   representativeSample: false,
   visualItems: [],
   visualShuffleSeed: 0,
+  kineticLayout: null,
   username: '',
   currentSlice: 0,
   animationId: null,
@@ -199,6 +200,7 @@ async function loadCollection({ username = '', local = false, mediaFilter = 'all
   clearError();
   clearLoadedImages();
   state.images.clear();
+  state.kineticLayout = null;
   state.currentSlice = 0;
 
   try {
@@ -456,6 +458,7 @@ function refreshVisualOrder() {
   state.visualItems = els.visualOrder.value === 'shuffle'
     ? seededShuffle(alphabetical, `${state.username || 'demo'}:${state.visualShuffleSeed}`)
     : alphabetical;
+  state.kineticLayout = null;
   els.reshuffleCovers.hidden = els.visualOrder.value !== 'shuffle';
 }
 
@@ -742,7 +745,7 @@ function renderStudio() {
   stopAnimationFrameOnly();
   applyCanvasFormat();
   const mode = els.visualMode.value;
-  els.coverSizeControl.hidden = mode === 'dungeon';
+  els.coverSizeControl.hidden = mode === 'dungeon' || mode === 'kinetics';
   els.sliceControls.style.display = mode === 'poster' ? 'grid' : 'none';
   updateExportControls();
   if (mode === 'poster') {
@@ -809,6 +812,11 @@ function drawPoster() {
 function drawMotionFrame(progressSeconds, mode) {
   if (mode === 'dungeon') {
     drawRecordDungeon(progressSeconds);
+    drawFooter(getCanvasFooterText());
+    return;
+  }
+  if (mode === 'kinetics') {
+    drawCoverKinetics(progressSeconds);
     drawFooter(getCanvasFooterText());
     return;
   }
@@ -1029,6 +1037,173 @@ function fitDungeonText(value, length) {
 
 function shortestAngleDelta(from, to) {
   return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
+
+const KINETIC_TRANSITION_SECONDS = 1.35;
+const KINETIC_HOLD_SECONDS = 0.72;
+
+function drawCoverKinetics(seconds) {
+  const layout = getKineticLayout();
+  if (!layout.length) {
+    drawBackground();
+    return;
+  }
+
+  drawKineticBackground();
+  const beatSeconds = KINETIC_TRANSITION_SECONDS + KINETIC_HOLD_SECONDS;
+  const beat = Math.floor(seconds / beatSeconds);
+  const phaseSeconds = seconds - beat * beatSeconds;
+  const targetIndex = wrapIndex(beat, layout.length);
+  const transitionAmount = clamp(phaseSeconds / KINETIC_TRANSITION_SECONDS, 0, 1);
+  const moving = transitionAmount < 1;
+  const samples = moving ? 5 : 1;
+
+  for (let sample = samples - 1; sample >= 0; sample -= 1) {
+    const trail = samples === 1 ? 0 : sample / (samples - 1);
+    const sampleSeconds = Math.max(0, seconds - trail * 0.075);
+    const camera = getKineticCamera(sampleSeconds, layout);
+    ctx.save();
+    ctx.globalAlpha = samples === 1 ? 1 : 0.22;
+    drawKineticWorld(layout, camera);
+    ctx.restore();
+  }
+
+  drawKineticFocus(layout[targetIndex], targetIndex, layout.length, moving);
+}
+
+function getKineticLayout() {
+  const items = getVisualItems();
+  const key = `${state.username || 'demo'}:${state.visualShuffleSeed}:${items.length}:${items[0]?.release_id || ''}`;
+  if (state.kineticLayout?.key === key) {
+    return state.kineticLayout.items;
+  }
+
+  let x = 0;
+  let y = 0;
+  let previousSize = 900;
+  let heading = -0.2;
+  const placed = items.map((item, index) => {
+    const scaleCurve = Math.pow(hashUnit(index, 31), 1.7);
+    const size = lerp(260, 1760, scaleCurve);
+    if (index > 0) {
+      heading += hashSigned(index, 32) * 1.25 + (index % 7 === 0 ? Math.PI * 0.55 : 0);
+      const spacing = (previousSize + size) * 0.72 + 300 + hashUnit(index, 33) * 900;
+      x += Math.cos(heading) * spacing;
+      y += Math.sin(heading) * spacing;
+    }
+    previousSize = size;
+    return {
+      item,
+      x,
+      y,
+      size,
+      rotation: hashSigned(index, 34) * 45,
+      depth: hashUnit(index, 35),
+    };
+  });
+  state.kineticLayout = { key, items: placed };
+  return placed;
+}
+
+function getKineticCamera(seconds, layout) {
+  const beatSeconds = KINETIC_TRANSITION_SECONDS + KINETIC_HOLD_SECONDS;
+  const beat = Math.floor(seconds / beatSeconds);
+  const phaseSeconds = seconds - beat * beatSeconds;
+  const target = layout[wrapIndex(beat, layout.length)];
+  const previous = beat > 0 ? layout[wrapIndex(beat - 1, layout.length)] : getKineticOpeningCamera(layout[0]);
+  const amount = easeInOutQuint(clamp(phaseSeconds / KINETIC_TRANSITION_SECONDS, 0, 1));
+  const targetZoom = getKineticTargetZoom(target.size);
+  const previousZoom = previous.zoom ?? getKineticTargetZoom(previous.size);
+  const targetRotation = (-target.rotation * Math.PI) / 180;
+  const previousRotation = previous.rotationRadians ?? (-previous.rotation * Math.PI) / 180;
+  return {
+    x: lerp(previous.x, target.x, amount),
+    y: lerp(previous.y, target.y, amount),
+    zoom: Math.exp(lerp(Math.log(previousZoom), Math.log(targetZoom), amount)),
+    rotation: previousRotation + shortestAngleDelta(previousRotation, targetRotation) * amount,
+  };
+}
+
+function getKineticOpeningCamera(target) {
+  return {
+    x: target.x - target.size * 0.32,
+    y: target.y - target.size * 0.22,
+    zoom: getKineticTargetZoom(target.size) * 0.22,
+    rotationRadians: (-target.rotation * Math.PI) / 180 - 0.34,
+  };
+}
+
+function getKineticTargetZoom(size) {
+  return (Math.min(els.canvas.width, els.canvas.height) * 0.72) / size;
+}
+
+function drawKineticWorld(layout, camera) {
+  const width = els.canvas.width;
+  const height = els.canvas.height;
+  const visibleRadius = Math.hypot(width, height) / Math.max(0.04, camera.zoom) * 0.72;
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate(camera.rotation);
+  ctx.scale(camera.zoom, camera.zoom);
+  ctx.translate(-camera.x, -camera.y);
+
+  layout.forEach((cover) => {
+    const distance = Math.hypot(cover.x - camera.x, cover.y - camera.y);
+    if (distance > visibleRadius + cover.size) {
+      return;
+    }
+    drawKineticCover(cover);
+  });
+}
+
+function drawKineticCover(cover) {
+  const img = state.images.get(cover.item.release_id);
+  ctx.save();
+  ctx.translate(cover.x, cover.y);
+  ctx.rotate((cover.rotation * Math.PI) / 180);
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.48)';
+  ctx.shadowBlur = cover.size * 0.055;
+  ctx.shadowOffsetY = cover.size * 0.035;
+  if (img) {
+    ctx.drawImage(img, -cover.size / 2, -cover.size / 2, cover.size, cover.size);
+  } else {
+    ctx.fillStyle = '#2b2723';
+    ctx.fillRect(-cover.size / 2, -cover.size / 2, cover.size, cover.size);
+  }
+  ctx.strokeStyle = 'rgba(255, 245, 230, 0.32)';
+  ctx.lineWidth = Math.max(5, cover.size * 0.008);
+  ctx.strokeRect(-cover.size / 2, -cover.size / 2, cover.size, cover.size);
+  ctx.restore();
+}
+
+function drawKineticBackground() {
+  const width = els.canvas.width;
+  const height = els.canvas.height;
+  const gradient = ctx.createRadialGradient(width * 0.5, height * 0.46, 0, width * 0.5, height * 0.46, Math.max(width, height) * 0.75);
+  gradient.addColorStop(0, '#27211e');
+  gradient.addColorStop(0.55, '#11191b');
+  gradient.addColorStop(1, '#050708');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+}
+
+function drawKineticFocus(cover, index, total, moving) {
+  if (!cover || moving) {
+    return;
+  }
+  const width = els.canvas.width;
+  const height = els.canvas.height;
+  const margin = Math.round(Math.min(width, height) * 0.055);
+  ctx.save();
+  ctx.fillStyle = 'rgba(5, 7, 8, 0.68)';
+  ctx.fillRect(margin, margin, Math.min(width * 0.5, 620), margin * 1.55);
+  ctx.fillStyle = palette.paper;
+  ctx.font = `800 ${Math.round(width * 0.022)}px Inter, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.fillText(fitDungeonText(cover.item.title, 38), margin * 1.35, margin * 1.55);
+  ctx.fillStyle = 'rgba(255, 245, 230, 0.7)';
+  ctx.font = `650 ${Math.round(width * 0.014)}px Inter, sans-serif`;
+  ctx.fillText(`${fitDungeonText(cover.item.artist, 42)}  //  ${index + 1} of ${total}`, margin * 1.35, margin * 2.05);
+  ctx.restore();
 }
 
 function drawCoverRiver(seconds) {
@@ -1675,6 +1850,7 @@ function modeLabel(mode) {
     poster: 'Image slices',
     river: 'Cover river',
     billboard: 'Billboard rush',
+    kinetics: 'Cover kinetics',
     dungeon: 'Record dungeon',
     crate: 'Crate flip',
     pile: 'Record pile',
@@ -1717,6 +1893,11 @@ function wrapIndex(index, length) {
 function easeInOutCubic(value) {
   const t = clamp(value, 0, 1);
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function easeInOutQuint(value) {
+  const t = clamp(value, 0, 1);
+  return t < 0.5 ? 16 * Math.pow(t, 5) : 1 - Math.pow(-2 * t + 2, 5) / 2;
 }
 
 function easeInCubic(value) {
