@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rekkids - Discogs Collection Image Maker</title>
-  <meta name="description" content="Turn a public Discogs collection into readable images and short record-wall videos. No accounts, no tracking, nothing stored.">
+  <meta name="description" content="Turn a public Discogs collection into readable images and short record-wall videos. No accounts, no collection data stored.">
   <link rel="stylesheet" href="style.css?v=20260719-3">
+  <script defer src="https://cloud.umami.is/script.js" data-website-id="01e8bd32-0ba0-4983-bf4b-6a46fd081cf6" data-domains="rekkids.xyz,www.rekkids.xyz" data-exclude-search="true" data-exclude-hash="true" data-do-not-track="true"></script>
 </head>
 <body>
   <header class="site-header">
@@ -39,7 +40,7 @@
             <span data-cover-loading-bar></span>
           </div>
         </div>
-        <p class="privacy-line">No accounts, no tracking, no collection data stored. Public Discogs collections only.</p>
+        <p class="privacy-line">No accounts, no cookies, no collection data stored. Anonymous usage counts only.</p>
         <div class="message" id="loading">Loading collection...</div>
         <div class="message error" id="error"></div>
       </div>
@@ -217,8 +218,50 @@
 
   <footer>
     <span>Rekkids runs in your browser and works from public Discogs collection data.</span>
-    <a href="https://www.discogs.com/" target="_blank" rel="noopener noreferrer">Data from Discogs</a>
+    <div class="footer-links">
+      <span class="build-version" id="build-version" title="Software version">v0.1 · local</span>
+      <button class="text-button" id="open-feedback" type="button">Send feedback</button>
+      <a href="https://www.discogs.com/" target="_blank" rel="noopener noreferrer">Data from Discogs</a>
+    </div>
   </footer>
+
+  <dialog class="feedback-dialog" id="feedback-dialog" aria-labelledby="feedback-title">
+    <form class="feedback-form" id="feedback-form" name="feedback" method="POST" data-netlify="true" netlify-honeypot="bot-field">
+      <input type="hidden" name="form-name" value="feedback">
+      <p class="honeypot">
+        <label>Do not fill this out if you are human: <input name="bot-field"></label>
+      </p>
+      <div class="feedback-heading">
+        <div>
+          <p class="eyebrow">Help shape Rekkids</p>
+          <h2 id="feedback-title">Send feedback</h2>
+        </div>
+        <button class="dialog-close" id="close-feedback" type="button" aria-label="Close feedback form">×</button>
+      </div>
+      <label>
+        <span>What kind of feedback?</span>
+        <select name="type" required>
+          <option value="idea">Idea or enhancement</option>
+          <option value="problem">Something went wrong</option>
+          <option value="general">General feedback</option>
+        </select>
+      </label>
+      <label>
+        <span>Message</span>
+        <textarea name="message" rows="6" maxlength="4000" required placeholder="What would make Rekkids better?"></textarea>
+      </label>
+      <label>
+        <span>Email <small>(optional, only if you'd like a reply)</small></span>
+        <input name="email" type="email" autocomplete="email" maxlength="254">
+      </label>
+      <p class="small-print">Your message is stored by Netlify and used only to review or respond to this feedback.</p>
+      <div class="feedback-actions">
+        <button id="cancel-feedback" type="button">Cancel</button>
+        <button class="primary" id="submit-feedback" type="submit">Send feedback</button>
+      </div>
+      <p class="feedback-status" id="feedback-status" aria-live="polite"></p>
+    </form>
+  </dialog>
 
   <script src="script.js?v=20260719-3"></script>
 </body>

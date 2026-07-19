@@ -1,5 +1,5 @@
 [build]
-  command = "rm -rf dist && mkdir -p dist && cp -R index.html style.css script.js collection.json covers SAMPLES dist/ && find dist -name '.DS_Store' -delete"
+  command = "./build.sh"
   publish = "dist"
 
 [dev]

@@ -70,6 +70,14 @@ const els = {
   recordingTime: document.getElementById('recording-time'),
   studioGate: document.getElementById('studio-gate'),
   studioGateAction: document.getElementById('studio-gate-action'),
+  feedbackDialog: document.getElementById('feedback-dialog'),
+  feedbackForm: document.getElementById('feedback-form'),
+  feedbackStatus: document.getElementById('feedback-status'),
+  openFeedback: document.getElementById('open-feedback'),
+  closeFeedback: document.getElementById('close-feedback'),
+  cancelFeedback: document.getElementById('cancel-feedback'),
+  submitFeedback: document.getElementById('submit-feedback'),
+  buildVersion: document.getElementById('build-version'),
   canvas: document.getElementById('export-canvas'),
 };
 
@@ -93,6 +101,7 @@ const palette = {
 
 async function init() {
   bindEvents();
+  loadBuildVersion();
   const urlUsername = getUsernameFromUrl();
   els.mediaFilter.value = getMediaFilterFromUrl();
   if (urlUsername) {
@@ -111,6 +120,22 @@ async function init() {
     els.error.style.display = 'block';
   } finally {
     els.loading.style.display = 'none';
+  }
+}
+
+async function loadBuildVersion() {
+  try {
+    const response = await fetch('version.json', { cache: 'no-store' });
+    if (!response.ok) {
+      return;
+    }
+    const build = await response.json();
+    if (build.version && build.commit) {
+      els.buildVersion.textContent = `v${build.version} · ${build.commit}`;
+      els.buildVersion.title = `Rekkids ${build.version}, build ${build.commit}`;
+    }
+  } catch (error) {
+    // Local source runs do not have a generated version file.
   }
 }
 
@@ -213,6 +238,49 @@ function bindEvents() {
     els.username.scrollIntoView({ block: 'center', behavior: 'smooth' });
     window.setTimeout(() => els.username.focus(), 350);
   });
+  els.openFeedback.addEventListener('click', openFeedbackDialog);
+  els.closeFeedback.addEventListener('click', closeFeedbackDialog);
+  els.cancelFeedback.addEventListener('click', closeFeedbackDialog);
+  els.feedbackDialog.addEventListener('click', (event) => {
+    if (event.target === els.feedbackDialog) {
+      closeFeedbackDialog();
+    }
+  });
+  els.feedbackForm.addEventListener('submit', submitFeedback);
+}
+
+function openFeedbackDialog() {
+  els.feedbackStatus.textContent = '';
+  els.feedbackDialog.showModal();
+}
+
+function closeFeedbackDialog() {
+  els.feedbackDialog.close();
+}
+
+async function submitFeedback(event) {
+  event.preventDefault();
+  els.submitFeedback.disabled = true;
+  els.feedbackStatus.textContent = 'Sending…';
+
+  try {
+    const formData = new FormData(els.feedbackForm);
+    const response = await fetch('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(formData).toString(),
+    });
+    if (!response.ok) {
+      throw new Error(`Form service returned HTTP ${response.status}`);
+    }
+    els.feedbackForm.reset();
+    els.feedbackStatus.textContent = 'Thanks — your feedback was sent.';
+    trackAnonymousEvent('feedback-submitted');
+  } catch (error) {
+    els.feedbackStatus.textContent = 'Feedback could not be sent. Please try again.';
+  } finally {
+    els.submitFeedback.disabled = false;
+  }
 }
 
 async function loadCollection({ username = '', local = false, mediaFilter = 'all' }) {
@@ -1868,6 +1936,11 @@ function recordMotion() {
     const extension = actualMimeType.startsWith('video/mp4') ? 'mp4' : format.extension;
     const blob = new Blob(state.chunks, { type: actualMimeType });
     downloadBlob(blob, `${slugify(els.title.value)}-${els.visualMode.value}.${extension}`);
+    trackAnonymousEvent('visual-download', {
+      fileType: extension,
+      format: els.format.value,
+      visual: els.visualMode.value,
+    });
     els.exportStatus.textContent = extension === 'mp4'
       ? 'MP4 downloaded — ready to upload to Reddit.'
       : 'WebM downloaded. This browser cannot record MP4; try another current browser for Reddit uploads.';
@@ -2012,6 +2085,11 @@ function downloadPng() {
       }
       const suffix = els.visualMode.value === 'poster' ? `slice-${state.currentSlice + 1}` : els.visualMode.value;
       downloadBlob(blob, `${slugify(els.title.value)}-${suffix}.png`);
+      trackAnonymousEvent('visual-download', {
+        fileType: 'png',
+        format: els.format.value,
+        visual: els.visualMode.value,
+      });
       els.exportStatus.textContent = 'PNG downloaded.';
     }, 'image/png');
   } catch (error) {
@@ -2037,6 +2115,12 @@ function downloadBlob(blob, filename) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function trackAnonymousEvent(name, data) {
+  if (window.umami && typeof window.umami.track === 'function') {
+    window.umami.track(name, data);
+  }
 }
 
 function modeLabel(mode) {
