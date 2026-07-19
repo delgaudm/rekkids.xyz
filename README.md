@@ -72,7 +72,7 @@ For respectful large-collection testing, add `&limit=20` to load only the first 
 
 If cover delivery fails, the on-page status identifies rate limiting, proxy HTTP errors, unexpected responses, image decoding failures, or browser network errors. A grouped, URL-free failure summary is also written to the browser console for diagnosis without issuing another test request.
 
-If Discogs cannot be reached or the collection is private, the app falls back to the demo collection.
+If the Discogs user cannot be found or the collection is private, the app shows a specific error without loading the demo collection.
 
 ## Refresh Collection Data
 

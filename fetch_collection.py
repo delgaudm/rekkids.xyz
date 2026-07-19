@@ -31,6 +31,7 @@ def get_collection(username, token):
     current_url = collection_url
 
     while current_url:
+        response = None
         try:
             print(f"Fetching page {page} from {current_url}...")
             response = requests.get(current_url, headers=headers, params={'per_page': 100}, timeout=30)

@@ -5,6 +5,7 @@ const state = {
   images: new Map(),
   imageUrls: new Map(),
   imageLoadGeneration: 0,
+  coversLoading: false,
   discogsCooldownUntil: 0,
   source: 'local',
   sourceTotal: 0,
@@ -218,6 +219,8 @@ async function loadCollection({ username = '', local = false, mediaFilter = 'all
   stopMotion();
   state.imageLoadGeneration += 1;
   const loadGeneration = state.imageLoadGeneration;
+  state.coversLoading = true;
+  updateExportControls();
   setLoading(local ? 'Loading demo collection...' : `Loading ${username}'s public Discogs collection...`);
   resetCoverLoadingStatus();
   clearError();
@@ -230,6 +233,9 @@ async function loadCollection({ username = '', local = false, mediaFilter = 'all
     const result = local
       ? { items: await fetchLocalCollection(), total: 0, fetched: 0, representativeSample: false }
       : await fetchPublicDiscogsCollection(username, mediaFilter);
+    if (loadGeneration !== state.imageLoadGeneration) {
+      return;
+    }
     const { items } = result;
     if (!items.length) {
       throw new Error('No public records were found.');
@@ -255,18 +261,40 @@ async function loadCollection({ username = '', local = false, mediaFilter = 'all
     preloadImages(state.collection, loadGeneration, { delayMs: local ? 0 : 400 }).catch(() => {
       if (loadGeneration === state.imageLoadGeneration) {
         updateCoverLoadingStatus({ processed: 0, total: state.collection.length, failed: true });
+        finishCoverLoading(loadGeneration);
       }
     });
   } catch (error) {
-    if (!local) {
-      await loadCollection({ local: true });
-      setError(`Could not load ${username} from Discogs: ${error.message}. Showing the demo collection instead.`);
+    if (loadGeneration !== state.imageLoadGeneration) {
       return;
     }
-    setError(`Could not load local collection: ${error.message}`);
+    finishCoverLoading(loadGeneration);
+    if (!local) {
+      resetCollectionAfterLoadFailure();
+      setError(error.message);
+      return;
+    }
+    setError(`Could not load the demo collection: ${error.message}`);
   } finally {
-    els.loading.style.display = 'none';
+    if (loadGeneration === state.imageLoadGeneration) {
+      els.loading.style.display = 'none';
+    }
   }
+}
+
+function resetCollectionAfterLoadFailure() {
+  clearLoadedImages();
+  state.images.clear();
+  state.collection = [];
+  state.sorted = [];
+  state.filtered = [];
+  state.visualItems = [];
+  state.kineticLayout = null;
+  state.username = '';
+  renderGrid();
+  renderStudio();
+  setStudioGateVisible(true);
+  els.exportStatus.textContent = 'Enter a valid public Discogs username to load a collection.';
 }
 
 async function fetchLocalCollection() {
@@ -326,8 +354,15 @@ async function fetchPublicDiscogsPage(username, page) {
     await waitForDiscogsCooldown();
     response = await fetchDiscogsPage(url);
   }
+  if (response.status === 403) {
+    throw new Error('This Discogs account is private. Album covers cannot be loaded.');
+  }
   if (response.status === 404) {
-    throw new Error('collection is private, missing, or the username was not found');
+    const responseText = await response.text();
+    if (/user[^.]*?(?:not found|does not exist|unknown)|(?:not found|does not exist)[^.]*?user/i.test(responseText)) {
+      throw new Error('The Discogs user cannot be found. Please check the spelling and try again.');
+    }
+    throw new Error('This Discogs account is private. Album covers cannot be loaded.');
   }
   if (!response.ok) {
     throw new Error(`Discogs returned HTTP ${response.status}`);
@@ -573,6 +608,7 @@ async function preloadImages(items, generation, { delayMs = 400 } = {}) {
         recordCoverFailure(failures, result);
         reportCoverFailures(failures);
         updateCoverLoadingStatus({ processed, total: items.length, loaded, failure: getPrimaryCoverFailure(failures) });
+        finishCoverLoading(generation);
         return;
       }
     }
@@ -596,6 +632,15 @@ async function preloadImages(items, generation, { delayMs = 400 } = {}) {
     reportCoverFailures(failures);
     updateCoverLoadingStatus({ processed, total: items.length, loaded, failure: getPrimaryCoverFailure(failures) });
   }
+  finishCoverLoading(generation);
+}
+
+function finishCoverLoading(generation) {
+  if (generation !== state.imageLoadGeneration) {
+    return;
+  }
+  state.coversLoading = false;
+  updateExportControls();
 }
 
 async function preloadImage(item) {
@@ -1736,6 +1781,9 @@ function drawRoundedRect(x, y, width, height, radius) {
 }
 
 function startMotion() {
+  if (blockExportWhileCoversLoad()) {
+    return;
+  }
   const mode = els.visualMode.value === 'poster' ? 'river' : els.visualMode.value;
   els.visualMode.value = mode;
   state.animationStartedAt = performance.now();
@@ -1776,6 +1824,9 @@ function stopMotion() {
 }
 
 function recordMotion() {
+  if (blockExportWhileCoversLoad()) {
+    return;
+  }
   if (!els.canvas.captureStream || !window.MediaRecorder) {
     els.exportStatus.textContent = 'This browser cannot record canvas video.';
     return;
@@ -1868,6 +1919,7 @@ function createCompatibleRecorder(stream) {
 function updateExportControls() {
   const isPoster = els.visualMode.value === 'poster';
   const recording = isRecording();
+  const coversLoading = state.coversLoading;
   const hasActiveMotion = Boolean(state.animationId) || recording;
 
   els.renderPng.hidden = !isPoster;
@@ -1879,9 +1931,14 @@ function updateExportControls() {
   els.recordMotion.classList.toggle('primary', !isPoster);
   els.recordMotion.textContent = recording ? 'Generating...' : 'Generate Video';
 
-  els.renderPng.disabled = recording;
-  els.playMotion.disabled = recording;
-  els.recordMotion.disabled = recording;
+  els.renderPng.disabled = recording || coversLoading;
+  els.playMotion.disabled = recording || coversLoading;
+  els.recordMotion.disabled = recording || coversLoading;
+
+  const loadingTitle = 'Wait for cover loading to finish before exporting.';
+  els.renderPng.title = coversLoading ? loadingTitle : '';
+  els.playMotion.title = coversLoading ? loadingTitle : '';
+  els.recordMotion.title = coversLoading ? loadingTitle : '';
 }
 
 function isRecording() {
@@ -1939,6 +1996,9 @@ function formatTime(seconds) {
 }
 
 function downloadPng() {
+  if (blockExportWhileCoversLoad()) {
+    return;
+  }
   if (els.visualMode.value !== 'poster') {
     drawMotionFrame(getStaticMotionPreviewTime(els.visualMode.value), els.visualMode.value);
   } else {
@@ -1957,6 +2017,15 @@ function downloadPng() {
   } catch (error) {
     els.exportStatus.textContent = `PNG export failed: ${error.message}. This usually means remote Discogs covers need a server-side cache.`;
   }
+}
+
+function blockExportWhileCoversLoad() {
+  if (!state.coversLoading) {
+    return false;
+  }
+  els.exportStatus.textContent = 'Wait for cover loading to finish before previewing or exporting.';
+  updateExportControls();
+  return true;
 }
 
 function downloadBlob(blob, filename) {
