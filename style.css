@@ -143,7 +143,7 @@ h2 {
 
 .user-loader {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 160px) auto auto;
   gap: 10px;
   align-items: end;
   max-width: none;
@@ -154,7 +154,8 @@ h2 {
   color: rgba(255, 250, 241, 0.68);
 }
 
-.site-header input {
+.site-header input,
+.site-header select {
   background: rgba(255, 250, 241, 0.96);
   border-color: rgba(255, 250, 241, 0.28);
 }
@@ -405,6 +406,64 @@ label span {
   line-height: 1.45;
 }
 
+.cover-loading-status {
+  padding: 12px;
+  color: var(--muted);
+  background: rgba(20, 17, 15, 0.045);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.cover-loading-status--hero {
+  margin-top: 12px;
+  color: rgba(255, 250, 241, 0.78);
+  background: rgba(255, 250, 241, 0.08);
+  border-color: rgba(255, 250, 241, 0.2);
+}
+
+.cover-loading-status--hero .cover-loading-track {
+  background: rgba(255, 250, 241, 0.16);
+}
+
+.cover-loading-status--canvas {
+  position: absolute;
+  top: clamp(24px, 5vw, 52px);
+  left: 50%;
+  z-index: 2;
+  width: min(440px, calc(100% - 48px));
+  color: rgba(255, 250, 241, 0.86);
+  background: rgba(20, 17, 15, 0.84);
+  border-color: rgba(255, 250, 241, 0.22);
+  box-shadow: 0 16px 42px rgba(20, 17, 15, 0.32);
+  pointer-events: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+}
+
+.cover-loading-status--canvas .cover-loading-track {
+  background: rgba(255, 250, 241, 0.16);
+}
+
+.cover-loading-track {
+  height: 6px;
+  margin-top: 9px;
+  overflow: hidden;
+  background: rgba(20, 17, 15, 0.1);
+  border-radius: 999px;
+}
+
+.cover-loading-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  margin: 0;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 160ms linear;
+}
+
 .studio-layout {
   display: grid;
   grid-template-columns: minmax(250px, 340px) minmax(0, 1fr);
@@ -499,6 +558,7 @@ canvas {
 .recording-overlay {
   position: absolute;
   inset: 0;
+  z-index: 3;
   display: grid;
   place-items: center;
   padding: 24px;

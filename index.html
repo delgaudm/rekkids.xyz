@@ -20,10 +20,26 @@
             <span>Discogs username</span>
             <input id="discogs-username" type="text" autocomplete="off" value="" placeholder="Your Discogs name">
           </label>
+          <label>
+            <span>Media</span>
+            <select id="media-filter">
+              <option value="all">All formats</option>
+              <option value="vinyl">Vinyl</option>
+              <option value="cd">CD</option>
+              <option value="cassette">Cassette</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
           <button class="primary" type="submit">Make mine</button>
           <button id="load-local" type="button">Demo</button>
         </form>
-        <p class="privacy-line">No accounts, no tracking, nothing stored. Public Discogs collections only.</p>
+        <div class="cover-loading-status cover-loading-status--hero" data-cover-loading-status hidden aria-live="polite">
+          <span data-cover-loading-text>Loading covers… 0 of 0</span>
+          <div class="cover-loading-track" aria-hidden="true">
+            <span data-cover-loading-bar></span>
+          </div>
+        </div>
+        <p class="privacy-line">No accounts, no tracking, no collection data stored. Public Discogs collections only.</p>
         <div class="message" id="loading">Loading collection...</div>
         <div class="message error" id="error"></div>
       </div>
@@ -108,6 +124,16 @@
           </label>
 
           <label>
+            <span>Cover order</span>
+            <select id="visual-order">
+              <option value="shuffle" selected>Shuffled</option>
+              <option value="artist">Artist A–Z</option>
+            </select>
+          </label>
+
+          <button id="reshuffle-covers" type="button">Shuffle again</button>
+
+          <label>
             <span>File name</span>
             <input id="export-title" type="text" value="rekkids-export">
           </label>
@@ -135,6 +161,12 @@
 
         <div class="canvas-stage">
           <canvas id="export-canvas" width="1080" height="1080"></canvas>
+          <div class="cover-loading-status cover-loading-status--canvas" data-cover-loading-status hidden aria-hidden="true">
+            <span data-cover-loading-text>Loading covers… 0 of 0</span>
+            <div class="cover-loading-track" aria-hidden="true">
+              <span data-cover-loading-bar></span>
+            </div>
+          </div>
           <div id="recording-overlay" class="recording-overlay" hidden aria-live="polite">
             <div class="recording-card">
               <span>Generating video</span>

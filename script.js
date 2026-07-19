@@ -3,7 +3,16 @@ const state = {
   sorted: [],
   filtered: [],
   images: new Map(),
+  imageUrls: new Map(),
+  imageLoadGeneration: 0,
+  discogsCooldownUntil: 0,
   source: 'local',
+  sourceTotal: 0,
+  sourceFetched: 0,
+  mediaFilter: 'all',
+  representativeSample: false,
+  visualItems: [],
+  visualShuffleSeed: 0,
   username: '',
   currentSlice: 0,
   animationId: null,
@@ -26,6 +35,7 @@ const els = {
   error: document.getElementById('error'),
   userForm: document.getElementById('user-loader'),
   username: document.getElementById('discogs-username'),
+  mediaFilter: document.getElementById('media-filter'),
   loadLocal: document.getElementById('load-local'),
   search: document.getElementById('search-input'),
   sort: document.getElementById('sort-select'),
@@ -36,8 +46,13 @@ const els = {
   coverSizeValue: document.getElementById('cover-size-value'),
   recordDuration: document.getElementById('record-duration'),
   recordDurationValue: document.getElementById('record-duration-value'),
+  visualOrder: document.getElementById('visual-order'),
+  reshuffleCovers: document.getElementById('reshuffle-covers'),
   title: document.getElementById('export-title'),
   showUsername: document.getElementById('show-username'),
+  coverLoadingStatuses: document.querySelectorAll('[data-cover-loading-status]'),
+  coverLoadingTexts: document.querySelectorAll('[data-cover-loading-text]'),
+  coverLoadingBars: document.querySelectorAll('[data-cover-loading-bar]'),
   sliceControls: document.getElementById('slice-controls'),
   sliceLabel: document.getElementById('slice-label'),
   prevSlice: document.getElementById('prev-slice'),
@@ -75,13 +90,14 @@ const palette = {
 async function init() {
   bindEvents();
   const urlUsername = getUsernameFromUrl();
+  els.mediaFilter.value = getMediaFilterFromUrl();
   if (urlUsername) {
     els.username.value = urlUsername;
   } else {
     els.username.value = '';
   }
   try {
-    await loadCollection(urlUsername ? { username: urlUsername } : { local: true });
+    await loadCollection(urlUsername ? { username: urlUsername, mediaFilter: els.mediaFilter.value } : { local: true });
   } catch (error) {
     els.error.textContent = `Could not load collection: ${error.message}`;
     els.error.style.display = 'block';
@@ -98,14 +114,16 @@ function bindEvents() {
       setError('Enter a Discogs username, or reset the demo collection.');
       return;
     }
-    updateUrlUsername(username);
-    await loadCollection({ username });
+    const mediaFilter = sanitizeMediaFilter(els.mediaFilter.value);
+    updateUrlCollectionOptions(username, mediaFilter);
+    await loadCollection({ username, mediaFilter });
     switchView('studio', { scroll: true });
   });
 
   els.loadLocal.addEventListener('click', async () => {
     clearUrlUsername();
     els.username.value = '';
+    els.mediaFilter.value = 'all';
     await loadCollection({ local: true });
     switchView('studio', { scroll: true });
   });
@@ -124,6 +142,21 @@ function bindEvents() {
 
   els.search.addEventListener('input', applyBrowseControls);
   els.sort.addEventListener('change', applyBrowseControls);
+
+  els.visualOrder.addEventListener('change', () => {
+    if (els.visualOrder.value === 'shuffle') {
+      state.visualShuffleSeed += 1;
+    }
+    refreshVisualOrder();
+    renderStudio();
+  });
+
+  els.reshuffleCovers.addEventListener('click', () => {
+    els.visualOrder.value = 'shuffle';
+    state.visualShuffleSeed += 1;
+    refreshVisualOrder();
+    renderStudio();
+  });
 
   [els.visualMode, els.format, els.coverSize, els.recordDuration, els.title, els.showUsername].forEach((input) => {
     input.addEventListener('input', () => {
@@ -157,30 +190,47 @@ function bindEvents() {
   els.stopMotion.addEventListener('click', stopMotion);
 }
 
-async function loadCollection({ username = '', local = false }) {
+async function loadCollection({ username = '', local = false, mediaFilter = 'all' }) {
   stopMotion();
+  state.imageLoadGeneration += 1;
+  const loadGeneration = state.imageLoadGeneration;
   setLoading(local ? 'Loading demo collection...' : `Loading ${username}'s public Discogs collection...`);
+  resetCoverLoadingStatus();
   clearError();
+  clearLoadedImages();
   state.images.clear();
   state.currentSlice = 0;
 
   try {
-    const items = local ? await fetchLocalCollection() : await fetchPublicDiscogsCollection(username);
+    const result = local
+      ? { items: await fetchLocalCollection(), total: 0, fetched: 0, representativeSample: false }
+      : await fetchPublicDiscogsCollection(username, mediaFilter);
+    const { items } = result;
     if (!items.length) {
       throw new Error('No public records were found.');
     }
 
     state.source = local ? 'local' : 'discogs';
+    state.sourceTotal = local ? items.length : result.total;
+    state.sourceFetched = local ? items.length : result.fetched;
+    state.mediaFilter = local ? 'all' : sanitizeMediaFilter(mediaFilter);
+    state.representativeSample = Boolean(result.representativeSample);
     state.username = local ? '' : username;
     state.collection = dedupeCollection(items);
     state.sorted = sortCollection(state.collection, els.sort.value || 'artist');
     state.filtered = state.sorted;
+    state.visualShuffleSeed += 1;
+    refreshVisualOrder();
     els.title.value = state.username ? `${state.username}-rekkids` : 'sample-rekkids';
     updateStats();
     renderGrid();
-    await preloadImages(state.collection);
     renderStudio();
     els.exportStatus.textContent = getSourceStatus();
+    preloadImages(state.collection, loadGeneration, { delayMs: local ? 0 : 400 }).catch(() => {
+      if (loadGeneration === state.imageLoadGeneration) {
+        updateCoverLoadingStatus({ processed: 0, total: state.collection.length, failed: true });
+      }
+    });
   } catch (error) {
     if (!local) {
       await loadCollection({ local: true });
@@ -205,39 +255,101 @@ async function fetchLocalCollection() {
   return data.map((item) => normalizeCollectionItem(item, { preferLocalCover: true }));
 }
 
-async function fetchPublicDiscogsCollection(username) {
+async function fetchPublicDiscogsCollection(username, mediaFilter = 'all') {
   const clean = sanitizeUsername(username);
   if (!clean) {
     throw new Error('Missing username');
   }
 
-  const all = [];
-  let page = 1;
-  let pages = 1;
-  const maxPages = 30;
+  const maxItems = getPublicCollectionLimit();
+  const firstPage = await fetchPublicDiscogsPage(clean, 1);
+  const total = Number(firstPage.pagination?.items || firstPage.releases?.length || 0);
+  const totalPages = Number(firstPage.pagination?.pages || 1);
+  const pageBudget = Math.min(totalPages, Math.max(1, Math.ceil(maxItems / 100)));
+  const sampledPages = getRepresentativePageNumbers(totalPages, pageBudget);
+  const all = [...(firstPage.releases || [])];
 
-  do {
-    const url = `https://api.discogs.com/users/${encodeURIComponent(clean)}/collection/folders/0/releases?per_page=100&page=${page}`;
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-      },
-    });
-
-    if (response.status === 404) {
-      throw new Error('collection is private, missing, or the username was not found');
-    }
-    if (!response.ok) {
-      throw new Error(`Discogs returned HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
+  for (const [index, page] of sampledPages.slice(1).entries()) {
+    setLoading(`Sampling ${formatMediaFilter(mediaFilter)} collection metadata… ${index + 2} of ${sampledPages.length} pages`);
+    await delay(400);
+    const data = await fetchPublicDiscogsPage(clean, page);
     all.push(...(data.releases || []));
-    pages = Math.min(Number(data.pagination?.pages || page), maxPages);
-    page += 1;
-  } while (page <= pages);
+  }
 
-  return all.map(formatDiscogsRelease).filter(Boolean);
+  const selected = all
+    .filter((release) => matchesMediaFilter(release, mediaFilter))
+    .slice(0, maxItems)
+    .map(formatDiscogsRelease)
+    .filter(Boolean);
+
+  return {
+    items: selected,
+    total,
+    fetched: Math.min(all.length, maxItems),
+    representativeSample: totalPages > sampledPages.length && sampledPages.length > 1,
+  };
+}
+
+async function fetchPublicDiscogsPage(username, page) {
+  const url = `https://api.discogs.com/users/${encodeURIComponent(username)}/collection/folders/0/releases?per_page=100&page=${page}`;
+  let response = await fetchDiscogsPage(url);
+
+  if (response.status === 429) {
+    state.discogsCooldownUntil = Date.now() + 65000;
+    setLoading('Discogs asked us to slow down. Cooling down for about 65 seconds…');
+    await waitForDiscogsCooldown();
+    response = await fetchDiscogsPage(url);
+  }
+  if (response.status === 404) {
+    throw new Error('collection is private, missing, or the username was not found');
+  }
+  if (!response.ok) {
+    throw new Error(`Discogs returned HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function getRepresentativePageNumbers(totalPages, pageBudget) {
+  if (pageBudget >= totalPages) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+  if (pageBudget <= 1) {
+    return [1];
+  }
+  const pages = new Set();
+  for (let index = 0; index < pageBudget; index += 1) {
+    pages.add(1 + Math.round((index * (totalPages - 1)) / (pageBudget - 1)));
+  }
+  return [...pages].sort((a, b) => a - b);
+}
+
+function matchesMediaFilter(release, mediaFilter) {
+  const selected = sanitizeMediaFilter(mediaFilter);
+  if (selected === 'all') {
+    return true;
+  }
+  const formats = release.basic_information?.formats || release.formats || [];
+  const names = formats.map((format) => String(format.name || '').toLowerCase());
+  if (selected === 'other') {
+    return !names.some((name) => ['vinyl', 'cd', 'cassette'].includes(name));
+  }
+  return names.includes(selected);
+}
+
+async function fetchDiscogsPage(url) {
+  await waitForDiscogsCooldown();
+  return fetch(url, {
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+}
+
+async function waitForDiscogsCooldown() {
+  const remaining = state.discogsCooldownUntil - Date.now();
+  if (remaining > 0) {
+    await delay(remaining);
+  }
 }
 
 function formatDiscogsRelease(release) {
@@ -250,6 +362,9 @@ function formatDiscogsRelease(release) {
     .filter(Boolean)
     .join(', ') || 'Unknown Artist';
   const remoteImage = info.cover_image || info.thumb || '';
+  const mediaTypes = (info.formats || [])
+    .map((format) => String(format.name || '').trim())
+    .filter(Boolean);
 
   if (!releaseId || !title || !remoteImage) {
     return null;
@@ -260,10 +375,11 @@ function formatDiscogsRelease(release) {
     title,
     release_id: releaseId,
     image_original_url: remoteImage,
-    image: `covers/${releaseId}.jpg`,
+    image: remoteImage,
     image_remote: remoteImage,
+    media_types: mediaTypes,
     discogs_url: `https://www.discogs.com/release/${releaseId}`,
-  }, { preferLocalCover: true });
+  });
 }
 
 function normalizeCollectionItem(item, { preferLocalCover = false } = {}) {
@@ -276,6 +392,7 @@ function normalizeCollectionItem(item, { preferLocalCover = false } = {}) {
     image_original_url: item.image_original_url || remote,
     image_remote: remote,
     image: preferLocalCover && releaseId ? `covers/${releaseId}.jpg` : (item.image || remote),
+    media_types: Array.isArray(item.media_types) ? item.media_types : [],
     discogs_url: item.discogs_url || `https://www.discogs.com/release/${releaseId}`,
   };
 }
@@ -334,6 +451,18 @@ function seededShuffle(items, seedText) {
   return items;
 }
 
+function refreshVisualOrder() {
+  const alphabetical = sortCollection(state.collection, 'artist');
+  state.visualItems = els.visualOrder.value === 'shuffle'
+    ? seededShuffle(alphabetical, `${state.username || 'demo'}:${state.visualShuffleSeed}`)
+    : alphabetical;
+  els.reshuffleCovers.hidden = els.visualOrder.value !== 'shuffle';
+}
+
+function getVisualItems() {
+  return state.visualItems.length ? state.visualItems : state.collection;
+}
+
 function updateStats() {
   if (els.sourceLabel) {
     els.sourceLabel.textContent = state.username ? `${state.username}'s public collection` : 'Demo collection already loaded';
@@ -367,14 +496,13 @@ function renderGrid() {
     link.rel = 'noopener noreferrer';
 
     const image = document.createElement('img');
-    image.src = item.image;
+    const loadedUrl = state.imageUrls.get(item.release_id);
+    if (loadedUrl) {
+      image.src = loadedUrl;
+    }
+    image.dataset.releaseId = String(item.release_id);
     image.alt = `${item.artist} - ${item.title}`;
     image.loading = 'lazy';
-    image.addEventListener('error', () => {
-      if (item.image_remote && image.src !== item.image_remote) {
-        image.src = item.image_remote;
-      }
-    }, { once: true });
 
     const caption = document.createElement('figcaption');
     caption.innerHTML = `<strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.artist)}</span>`;
@@ -388,33 +516,226 @@ function renderGrid() {
   els.grid.replaceChildren(fragment);
 }
 
-function preloadImages(items) {
-  const batch = items.map((item) => new Promise((resolve) => {
-    const img = new Image();
-    if (/^https?:\/\//.test(item.image)) {
-      img.crossOrigin = 'anonymous';
+async function preloadImages(items, generation, { delayMs = 400 } = {}) {
+  let processed = 0;
+  let loaded = 0;
+  const failures = new Map();
+  updateCoverLoadingStatus({ processed, total: items.length });
+
+  for (const item of items) {
+    if (generation !== state.imageLoadGeneration) {
+      return;
     }
-    img.onload = () => {
-      state.images.set(item.release_id, img);
-      resolve();
-    };
-    img.onerror = () => {
-      if (item.image_remote && item.image_remote !== item.image) {
-        const remoteImg = new Image();
-        remoteImg.crossOrigin = 'anonymous';
-        remoteImg.onload = () => {
-          state.images.set(item.release_id, remoteImg);
-          resolve();
-        };
-        remoteImg.onerror = () => resolve();
-        remoteImg.src = item.image_remote;
+
+    let result = await preloadImage(item);
+    if (result.outcome === 'throttled') {
+      state.discogsCooldownUntil = Date.now() + 65000;
+      updateCoverLoadingStatus({ processed, total: items.length, loaded, cooldownSeconds: 65 });
+      await waitForDiscogsCooldown();
+      if (generation !== state.imageLoadGeneration) {
         return;
       }
-      resolve();
-    };
-    img.src = item.image;
+      result = await preloadImage(item);
+      if (result.outcome === 'throttled') {
+        recordCoverFailure(failures, result);
+        reportCoverFailures(failures);
+        updateCoverLoadingStatus({ processed, total: items.length, loaded, failure: getPrimaryCoverFailure(failures) });
+        return;
+      }
+    }
+
+    processed += 1;
+    if (result.outcome === 'loaded') {
+      loaded += 1;
+    } else {
+      recordCoverFailure(failures, result);
+    }
+    updateCoverLoadingStatus({ processed, total: items.length, loaded });
+    if (!state.animationId && !isRecording() && (processed % 12 === 0 || processed === items.length)) {
+      renderStudio();
+    }
+    if (processed < items.length && delayMs > 0) {
+      await delay(delayMs);
+    }
+  }
+
+  if (processed === items.length && failures.size > 0) {
+    reportCoverFailures(failures);
+    updateCoverLoadingStatus({ processed, total: items.length, loaded, failure: getPrimaryCoverFailure(failures) });
+  }
+}
+
+async function preloadImage(item) {
+  const urls = [...new Set([item.image, item.image_remote].filter(Boolean))];
+  let lastFailure = { outcome: 'failed', reason: 'missing-url' };
+  for (const url of urls) {
+    try {
+      const response = await fetch(getCoverFetchUrl(url), { headers: { Accept: 'image/*' } });
+      const contentType = response.headers.get('content-type') || '';
+      if (response.status === 429) {
+        return { outcome: 'throttled', reason: 'rate-limit', httpStatus: response.status };
+      }
+      if (!response.ok || !contentType.startsWith('image/')) {
+        const message = await response.text();
+        if (/too (?:many|fast)|thrott|rate.?limit/i.test(message)) {
+          return { outcome: 'throttled', reason: 'rate-limit', httpStatus: response.status };
+        }
+        lastFailure = {
+          outcome: 'failed',
+          reason: response.ok ? 'non-image-response' : 'proxy-http',
+          httpStatus: response.status,
+          contentType,
+        };
+        continue;
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      let img;
+      try {
+        img = await loadImageElement(objectUrl);
+      } catch (error) {
+        URL.revokeObjectURL(objectUrl);
+        lastFailure = { outcome: 'failed', reason: 'image-decode' };
+        continue;
+      }
+      state.images.set(item.release_id, img);
+      state.imageUrls.set(item.release_id, objectUrl);
+      updateGridCover(item.release_id, objectUrl);
+      return { outcome: 'loaded' };
+    } catch (error) {
+      lastFailure = { outcome: 'failed', reason: 'network' };
+    }
+  }
+  return lastFailure;
+}
+
+function recordCoverFailure(failures, result) {
+  const key = `${result.reason || 'unknown'}:${result.httpStatus || 0}`;
+  const current = failures.get(key) || { ...result, count: 0 };
+  current.count += 1;
+  failures.set(key, current);
+}
+
+function getPrimaryCoverFailure(failures) {
+  return [...failures.values()].sort((a, b) => b.count - a.count)[0] || { reason: 'unknown', count: 0 };
+}
+
+function reportCoverFailures(failures) {
+  const summary = [...failures.values()].map(({ reason, httpStatus, contentType, count }) => ({
+    reason,
+    httpStatus: httpStatus || undefined,
+    contentType: contentType || undefined,
+    count,
   }));
-  return Promise.all(batch);
+  console.warn('Cover loading failure summary', summary);
+}
+
+function getCoverFetchUrl(url) {
+  if (!/^https?:\/\//.test(url)) {
+    return url;
+  }
+  return `/.netlify/images?url=${encodeURIComponent(url)}&fm=jpg&q=90`;
+}
+
+function getPublicCollectionLimit() {
+  const requested = Number(new URLSearchParams(window.location.search).get('limit'));
+  if (Number.isFinite(requested) && requested > 0) {
+    return clamp(Math.floor(requested), 1, 800);
+  }
+  return 800;
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function updateGridCover(releaseId, src) {
+  const selector = `img[data-release-id="${String(releaseId)}"]`;
+  els.grid.querySelectorAll(selector).forEach((image) => {
+    image.src = src;
+  });
+}
+
+function clearLoadedImages() {
+  state.imageUrls.forEach((url) => URL.revokeObjectURL(url));
+  state.imageUrls.clear();
+}
+
+function updateCoverLoadingStatus({ processed, total, loaded = processed, cooldownSeconds = 0, failed = false, failure = null }) {
+  if (!els.coverLoadingStatuses.length) {
+    return;
+  }
+  els.coverLoadingStatuses.forEach((status) => {
+    status.hidden = false;
+  });
+  const percent = total ? (processed / total) * 100 : 0;
+  els.coverLoadingBars.forEach((bar) => {
+    bar.style.width = `${percent.toFixed(1)}%`;
+  });
+  const collectionScope = getCoverCollectionScopeMessage();
+  let message;
+  if (failed || failure) {
+    message = `${getCoverFailureMessage({ loaded, total, failure })}${collectionScope}`;
+  } else if (cooldownSeconds) {
+    message = `Discogs asked us to slow down. Loaded ${loaded} of ${total}; cooling down for about ${cooldownSeconds} seconds…${collectionScope}`;
+  } else if (processed >= total) {
+    message = `${loaded} covers ready.${collectionScope}`;
+  } else {
+    message = `Loading covers… ${processed} of ${total}.${collectionScope}`;
+  }
+  els.coverLoadingTexts.forEach((text) => {
+    text.textContent = message;
+  });
+}
+
+function getCoverCollectionScopeMessage() {
+  if (state.source !== 'discogs') {
+    return '';
+  }
+  if (state.representativeSample) {
+    return ` ${formatMediaSampleLabel(state.mediaFilter)} drawn across ${state.sourceTotal.toLocaleString()} collection entries.`;
+  }
+  if (state.sourceTotal <= state.sourceFetched) {
+    return '';
+  }
+  return ` Collection capped at the first ${state.sourceFetched.toLocaleString()} of ${state.sourceTotal.toLocaleString()} entries.`;
+}
+
+function getCoverFailureMessage({ loaded, total, failure }) {
+  const status = failure?.httpStatus ? ` (HTTP ${failure.httpStatus})` : '';
+  if (failure?.reason === 'proxy-http' && failure.httpStatus === 404 && /^(?:localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)) {
+    return `The local cover proxy is unavailable${status}. Run the site with \`npx netlify-cli dev\`, then try again. Loaded ${loaded} of ${total}.`;
+  }
+  if (failure?.reason === 'rate-limit') {
+    return `Discogs or the cover proxy is still rate-limiting requests${status}. Loaded ${loaded} of ${total}; please wait and try again later.`;
+  }
+  if (failure?.reason === 'proxy-http') {
+    return `The cover proxy could not retrieve the images${status}. Loaded ${loaded} of ${total}; please try again later.`;
+  }
+  if (failure?.reason === 'non-image-response') {
+    return `The cover service returned an unexpected response${status}. Loaded ${loaded} of ${total}; please try again later.`;
+  }
+  if (failure?.reason === 'image-decode') {
+    return `The downloaded covers could not be decoded. Loaded ${loaded} of ${total}; please try again later.`;
+  }
+  if (failure?.reason === 'network') {
+    return `The browser could not reach the cover service. Loaded ${loaded} of ${total}; check the connection and try again.`;
+  }
+  return `Cover delivery stopped. Loaded ${loaded} of ${total}; please try again later.`;
+}
+
+function resetCoverLoadingStatus() {
+  els.coverLoadingStatuses.forEach((status) => {
+    status.hidden = true;
+  });
+  els.coverLoadingBars.forEach((bar) => {
+    bar.style.width = '0%';
+  });
 }
 
 function renderStudio() {
@@ -456,7 +777,7 @@ function getPosterLayout() {
 
 function getSliceCount() {
   const { perSlice } = getPosterLayout();
-  return Math.max(1, Math.ceil(state.sorted.length / perSlice));
+  return Math.max(1, Math.ceil(getVisualItems().length / perSlice));
 }
 
 function drawPoster() {
@@ -464,7 +785,7 @@ function drawPoster() {
   const sliceCount = getSliceCount();
   state.currentSlice = clamp(state.currentSlice, 0, sliceCount - 1);
   const start = state.currentSlice * layout.perSlice;
-  const items = state.sorted.slice(start, start + layout.perSlice);
+  const items = getVisualItems().slice(start, start + layout.perSlice);
 
   drawBackground();
 
@@ -534,7 +855,7 @@ function createDungeon() {
 }
 
 function drawRecordDungeon(seconds) {
-  const items = state.sorted.length ? state.sorted : state.collection;
+  const items = getVisualItems();
   const width = els.canvas.width;
   const height = els.canvas.height;
   if (!items.length) {
@@ -715,7 +1036,7 @@ function drawCoverRiver(seconds) {
   const gap = Math.round(size * 0.14);
   const lanes = Math.max(2, Math.floor((els.canvas.height - 240) / (size + gap)));
   const yStart = Math.round((els.canvas.height - lanes * size - (lanes - 1) * gap) / 2) + 40;
-  const laneItems = state.sorted.length ? state.sorted : state.collection;
+  const laneItems = getVisualItems();
   if (!laneItems.length) {
     return;
   }
@@ -747,7 +1068,7 @@ function drawCoverRiver(seconds) {
 function drawBillboardRush(seconds) {
   const base = Number(els.coverSize.value);
   const rows = 5;
-  const items = state.sorted.length ? state.sorted : state.collection;
+  const items = getVisualItems();
   if (!items.length) {
     return;
   }
@@ -784,7 +1105,7 @@ function drawBillboardRush(seconds) {
 }
 
 function drawCrateFlip(seconds) {
-  const items = state.sorted.length ? state.sorted : state.collection;
+  const items = getVisualItems();
   if (!items.length) {
     return;
   }
@@ -836,7 +1157,7 @@ function drawCrateFlip(seconds) {
 }
 
 function drawRecordPile(seconds) {
-  const items = state.sorted.length ? state.sorted : state.collection;
+  const items = getVisualItems();
   if (!items.length) {
     return;
   }
@@ -1362,7 +1683,7 @@ function modeLabel(mode) {
 
 function getStaticMotionPreviewTime(mode) {
   if (mode === 'pile') {
-    const items = state.sorted.length ? state.sorted : state.collection;
+  const items = getVisualItems();
     return getPileDealEvery(items) * Math.max(1, getPileLimit(items) - 1);
   }
   return 2.5;
@@ -1379,6 +1700,10 @@ function getPileDealEvery(items) {
 
 function getRecordDurationSeconds() {
   return Number(els.recordDuration?.value || 30);
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function clamp(value, min, max) {
@@ -1427,9 +1752,18 @@ function getUsernameFromUrl() {
   return sanitizeUsername(params.get('u') || params.get('user') || '');
 }
 
-function updateUrlUsername(username) {
+function getMediaFilterFromUrl() {
+  return sanitizeMediaFilter(new URLSearchParams(window.location.search).get('media'));
+}
+
+function updateUrlCollectionOptions(username, mediaFilter) {
   const url = new URL(window.location.href);
   url.searchParams.set('u', username);
+  if (mediaFilter === 'all') {
+    url.searchParams.delete('media');
+  } else {
+    url.searchParams.set('media', mediaFilter);
+  }
   window.history.replaceState({}, '', url);
 }
 
@@ -1437,7 +1771,39 @@ function clearUrlUsername() {
   const url = new URL(window.location.href);
   url.searchParams.delete('u');
   url.searchParams.delete('user');
+  url.searchParams.delete('media');
   window.history.replaceState({}, '', url);
+}
+
+function sanitizeMediaFilter(value) {
+  const normalized = String(value || 'all').toLowerCase();
+  return ['all', 'vinyl', 'cd', 'cassette', 'other'].includes(normalized) ? normalized : 'all';
+}
+
+function formatMediaFilter(value) {
+  return {
+    all: 'all-format',
+    vinyl: 'Vinyl',
+    cd: 'CD',
+    cassette: 'Cassette',
+    other: 'other-format',
+  }[sanitizeMediaFilter(value)];
+}
+
+function formatMediaCoverLabel(value) {
+  return {
+    all: 'covers',
+    vinyl: 'Vinyl covers',
+    cd: 'CD covers',
+    cassette: 'Cassette covers',
+    other: 'other-format covers',
+  }[sanitizeMediaFilter(value)];
+}
+
+function formatMediaSampleLabel(value) {
+  return sanitizeMediaFilter(value) === 'all'
+    ? 'Representative sample'
+    : `Representative ${formatMediaFilter(value)} sample`;
 }
 
 function sanitizeUsername(value) {
@@ -1461,6 +1827,15 @@ function setError(message) {
 
 function getSourceStatus() {
   if (state.source === 'discogs') {
+    if (state.representativeSample) {
+      return `Using ${state.collection.length.toLocaleString()} ${formatMediaCoverLabel(state.mediaFilter)} sampled across ${state.sourceTotal.toLocaleString()} collection entries.`;
+    }
+    if (state.sourceTotal > state.sourceFetched) {
+      return `Loaded the first ${state.sourceFetched.toLocaleString()} of ${state.sourceTotal.toLocaleString()} collection entries to keep loading and video generation reliable in your browser.`;
+    }
+    if (state.mediaFilter !== 'all') {
+      return `Loaded ${state.collection.length.toLocaleString()} ${formatMediaCoverLabel(state.mediaFilter)} from ${state.sourceTotal.toLocaleString()} collection entries.`;
+    }
     return 'Loaded from public Discogs data. Choose a motion visual and generate a video.';
   }
   return 'Demo collection loaded. Choose a motion visual and generate a video.';

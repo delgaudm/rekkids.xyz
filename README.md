@@ -18,6 +18,12 @@ The maker view pairs export controls with a live canvas preview for PNG and brow
 
 - Loads a local Discogs-derived collection from `collection.json`.
 - Can fetch a public Discogs collection from a username in the UI or `?u=<discogs-username>`.
+- Loads covers from up to 800 sampled public collection entries to keep request volume, load time, decoded-image memory, and canvas/video generation manageable in the browser.
+- Samples metadata pages across large collections so records near the end have a chance to appear instead of always taking the first 800.
+- Filters public collections by Vinyl, CD, Cassette, other media, or all formats before cover downloads begin.
+- Keeps visual cover order independent from Browse sorting, with shuffled and artist A–Z modes plus a re-shuffle control.
+- Paces Discogs cover requests at 400 ms intervals with visible progress and a cooldown when Discogs throttles delivery.
+- Routes public covers through Netlify Image CDN so canvases remain exportable and repeat covers can use the edge cache.
 - Shows a sample-first maker homepage with live previews of the visual styles.
 - Provides a maker UI with:
   - readable PNG slices that preserve cover size,
@@ -31,7 +37,7 @@ The maker view pairs export controls with a live canvas preview for PNG and brow
 
 ## Run Locally
 
-Use a local server so the browser can fetch `collection.json`.
+For the bundled demo collection, use a basic local server so the browser can fetch `collection.json`.
 
 ```bash
 cd rekkids.xyz
@@ -44,11 +50,24 @@ Open:
 http://127.0.0.1:8000/
 ```
 
-To load a public Discogs collection directly:
+To load a public Discogs collection and its proxied covers, run Netlify's local environment instead:
+
+```bash
+npx netlify-cli dev
+```
+
+Open the local URL it prints (normally port 8888), then use:
 
 ```text
-http://127.0.0.1:8000/?u=<discogs-username>
+http://localhost:8888/?u=<discogs-username>
 ```
+
+A basic static server does not provide the `/.netlify/images` cover endpoint.
+The `[dev]` configuration serves the project root so local source edits appear immediately; production builds still publish the generated `dist/` directory.
+
+For respectful large-collection testing, add `&limit=20` to load only the first 20 entries.
+
+If cover delivery fails, the on-page status identifies rate limiting, proxy HTTP errors, unexpected responses, image decoding failures, or browser network errors. A grouped, URL-free failure summary is also written to the browser console for diagnosis without issuing another test request.
 
 If Discogs cannot be reached or the collection is private, the app falls back to the demo collection.
 
