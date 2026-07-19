@@ -35,11 +35,15 @@
     </div>
 
     <div class="sample-showcase" aria-label="Sample Rekkids visuals">
-      <button class="sample-card featured active" type="button" data-sample-mode="billboard" aria-label="Use Billboard rush">
-        <video src="SAMPLES/sample-rekkids-billboard.webm" autoplay muted loop playsinline></video>
-        <span>Billboard rush</span>
+      <button class="sample-card featured" type="button" data-sample-mode="dungeon" aria-label="Use Record dungeon">
+        <video src="SAMPLES/sample-rekkids-dungeon.webm" autoplay muted loop playsinline></video>
+        <span>Record dungeon</span>
       </button>
       <div class="sample-grid">
+        <button class="sample-card wide active" type="button" data-sample-mode="billboard" aria-label="Use Billboard rush">
+          <video src="SAMPLES/sample-rekkids-billboard.webm" autoplay muted loop playsinline></video>
+          <span>Billboard rush</span>
+        </button>
         <button class="sample-card" type="button" data-sample-mode="pile" aria-label="Use Record pile">
           <video src="SAMPLES/sample-rekkids-pile.webm" autoplay muted loop playsinline></video>
           <span>Record pile</span>
@@ -83,6 +87,7 @@
               <option value="poster">Image slices</option>
               <option value="river">Cover river</option>
               <option value="billboard" selected>Billboard rush</option>
+              <option value="dungeon">Record dungeon</option>
               <option value="crate">Crate flip</option>
               <option value="pile">Record pile</option>
             </select>
@@ -97,7 +102,7 @@
             </select>
           </label>
 
-          <label>
+          <label id="cover-size-control">
             <span>Cover size <strong id="cover-size-value">168</strong>px</span>
             <input id="cover-size" type="range" min="120" max="260" value="168">
           </label>

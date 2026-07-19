@@ -33,6 +33,7 @@ const els = {
   sort: document.getElementById('sort-select'),
   visualMode: document.getElementById('visual-mode'),
   format: document.getElementById('format-select'),
+  coverSizeControl: document.getElementById('cover-size-control'),
   coverSize: document.getElementById('cover-size'),
   coverSizeValue: document.getElementById('cover-size-value'),
   recordDuration: document.getElementById('record-duration'),
@@ -426,6 +427,7 @@ function renderStudio() {
   stopAnimationFrameOnly();
   applyCanvasFormat();
   const mode = els.visualMode.value;
+  els.coverSizeControl.hidden = mode === 'dungeon';
   els.sliceControls.style.display = mode === 'poster' ? 'grid' : 'none';
   updateExportControls();
   if (mode === 'poster') {
@@ -490,6 +492,11 @@ function drawPoster() {
 }
 
 function drawMotionFrame(progressSeconds, mode) {
+  if (mode === 'dungeon') {
+    drawRecordDungeon(progressSeconds);
+    drawFooter(getCanvasFooterText());
+    return;
+  }
   drawBackground();
   if (mode === 'river') {
     drawCoverRiver(progressSeconds);
@@ -501,6 +508,212 @@ function drawMotionFrame(progressSeconds, mode) {
     drawCrateFlip(progressSeconds);
   }
   drawFooter(getCanvasFooterText());
+}
+
+const dungeon = createDungeon();
+
+function createDungeon() {
+  const size = 21;
+  const map = Array.from({ length: size }, () => Array(size).fill(1));
+  const route = [
+    [3, 3], [10, 3], [17, 3], [17, 9], [13, 9], [13, 6],
+    [8, 6], [8, 11], [17, 11], [17, 17], [10, 17], [3, 17],
+    [3, 12], [6, 12], [6, 8], [3, 8],
+  ];
+
+  for (let index = 0; index < route.length; index += 1) {
+    const start = route[index];
+    const end = route[(index + 1) % route.length];
+    const steps = Math.max(Math.abs(end[0] - start[0]), Math.abs(end[1] - start[1]));
+    for (let step = 0; step <= steps; step += 1) {
+      const amount = steps ? step / steps : 0;
+      const x = Math.round(lerp(start[0], end[0], amount));
+      const y = Math.round(lerp(start[1], end[1], amount));
+      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          map[y + offsetY][x + offsetX] = 0;
+        }
+      }
+    }
+  }
+  return { map, route };
+}
+
+function drawRecordDungeon(seconds) {
+  const items = state.sorted.length ? state.sorted : state.collection;
+  const width = els.canvas.width;
+  const height = els.canvas.height;
+  if (!items.length) {
+    drawBackground();
+    return;
+  }
+
+  const horizon = Math.round(height * 0.49);
+  const ceiling = ctx.createLinearGradient(0, 0, 0, horizon);
+  ceiling.addColorStop(0, '#05090c');
+  ceiling.addColorStop(1, '#172126');
+  ctx.fillStyle = ceiling;
+  ctx.fillRect(0, 0, width, horizon);
+  const floor = ctx.createLinearGradient(0, horizon, 0, height);
+  floor.addColorStop(0, '#46352a');
+  floor.addColorStop(0.45, '#171515');
+  floor.addColorStop(1, '#060708');
+  ctx.fillStyle = floor;
+  ctx.fillRect(0, horizon, width, height - horizon);
+
+  const camera = getDungeonCamera(seconds);
+  const directionX = Math.cos(camera.angle);
+  const directionY = Math.sin(camera.angle);
+  const planeScale = Math.tan((66 * Math.PI / 180) / 2);
+  const planeX = -directionY * planeScale;
+  const planeY = directionX * planeScale;
+  const rayStep = 1;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  let featured = null;
+
+  for (let screenX = 0; screenX < width; screenX += rayStep) {
+    const cameraX = (2 * screenX) / width - 1;
+    const rayX = directionX + planeX * cameraX;
+    const rayY = directionY + planeY * cameraX;
+    const hit = castDungeonRay(camera.x, camera.y, rayX, rayY, items.length);
+    if (!hit) {
+      continue;
+    }
+
+    const wallHeight = Math.min(height * 2.2, height / Math.max(0.12, hit.distance));
+    const top = Math.round(horizon - wallHeight / 2);
+    const item = items[hit.itemIndex];
+    const img = state.images.get(item.release_id);
+    const darkness = clamp((hit.distance - 1.5) * 0.025 + (hit.side ? 0.035 : 0), 0, 0.28);
+
+    if (img) {
+      const sourceX = clamp(Math.floor((1 - hit.textureX) * img.naturalWidth), 0, Math.max(0, img.naturalWidth - 1));
+      ctx.drawImage(img, sourceX, 0, 1, img.naturalHeight, screenX, top, rayStep, wallHeight);
+    } else {
+      ctx.fillStyle = '#5d4e43';
+      ctx.fillRect(screenX, top, rayStep, wallHeight);
+    }
+
+    ctx.fillStyle = `rgba(4, 8, 10, ${darkness})`;
+    ctx.fillRect(screenX, top, rayStep, wallHeight);
+    if (Math.abs(cameraX) < 0.015) {
+      featured = { item, distance: hit.distance };
+    }
+  }
+
+  drawDungeonAtmosphere(width, height, horizon);
+  drawDungeonHud(featured, items.length, width, height);
+}
+
+function getDungeonCamera(seconds) {
+  const route = dungeon.route;
+  const secondsPerLeg = 4.2;
+  const progress = seconds / secondsPerLeg;
+  const leg = Math.floor(progress) % route.length;
+  const phase = progress - Math.floor(progress);
+  const start = route[leg];
+  const end = route[(leg + 1) % route.length];
+  const next = route[(leg + 2) % route.length];
+  const currentAngle = Math.atan2(end[1] - start[1], end[0] - start[0]);
+  const nextAngle = Math.atan2(next[1] - end[1], next[0] - end[0]);
+  const angleDelta = shortestAngleDelta(currentAngle, nextAngle);
+  const isCorner = Math.abs(angleDelta) > 0.05;
+  const move = smoothstep(0, isCorner ? 0.52 : 1, phase);
+  let x = lerp(start[0] + 0.5, end[0] + 0.5, move);
+  let y = lerp(start[1] + 0.5, end[1] + 0.5, move);
+  let angle = currentAngle;
+
+  if (isCorner) {
+    const peerIn = smoothstep(0.52, 0.66, phase);
+    const peerOut = smoothstep(0.76, 0.86, phase);
+    const peerDistance = 0.62 * peerIn * (1 - peerOut);
+    x += Math.cos(currentAngle) * peerDistance;
+    y += Math.sin(currentAngle) * peerDistance;
+    const turn = smoothstep(0.86, 1, phase);
+    angle += angleDelta * turn;
+  }
+  return { x, y, angle };
+}
+
+function castDungeonRay(originX, originY, rayX, rayY, itemCount) {
+  let mapX = Math.floor(originX);
+  let mapY = Math.floor(originY);
+  const deltaX = Math.abs(1 / (rayX || 0.000001));
+  const deltaY = Math.abs(1 / (rayY || 0.000001));
+  const stepX = rayX < 0 ? -1 : 1;
+  const stepY = rayY < 0 ? -1 : 1;
+  let sideX = rayX < 0 ? (originX - mapX) * deltaX : (mapX + 1 - originX) * deltaX;
+  let sideY = rayY < 0 ? (originY - mapY) * deltaY : (mapY + 1 - originY) * deltaY;
+  let side = 0;
+
+  for (let depth = 0; depth < 48; depth += 1) {
+    if (sideX < sideY) {
+      sideX += deltaX;
+      mapX += stepX;
+      side = 0;
+    } else {
+      sideY += deltaY;
+      mapY += stepY;
+      side = 1;
+    }
+    if (!dungeon.map[mapY] || dungeon.map[mapY][mapX] === undefined) {
+      return null;
+    }
+    if (dungeon.map[mapY][mapX]) {
+      const distance = side === 0
+        ? (mapX - originX + (1 - stepX) / 2) / rayX
+        : (mapY - originY + (1 - stepY) / 2) / rayY;
+      let wallPoint = side === 0 ? originY + distance * rayY : originX + distance * rayX;
+      wallPoint -= Math.floor(wallPoint);
+      if ((side === 0 && rayX > 0) || (side === 1 && rayY < 0)) {
+        wallPoint = 1 - wallPoint;
+      }
+      const face = side === 0 ? (stepX > 0 ? 1 : 3) : (stepY > 0 ? 2 : 0);
+      const itemIndex = Math.abs((mapX * 97 + mapY * 53 + face * 29)) % itemCount;
+      return { distance: Math.abs(distance), textureX: wallPoint, itemIndex, side };
+    }
+  }
+  return null;
+}
+
+function drawDungeonAtmosphere(width, height, horizon) {
+  const vignette = ctx.createRadialGradient(width / 2, horizon, height * 0.12, width / 2, horizon, Math.max(width, height) * 0.72);
+  vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vignette.addColorStop(0.82, 'rgba(0, 0, 0, 0.06)');
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.45)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, width, height);
+}
+
+function drawDungeonHud(featured, itemCount, width, height) {
+  const margin = Math.round(Math.min(width, height) * 0.055);
+  const fontSize = Math.round(Math.min(width, height) * 0.024);
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(6, 8, 9, 0.72)';
+  ctx.fillRect(margin, margin, Math.min(width * 0.42, 520), fontSize * 2.9);
+  ctx.fillStyle = palette.gold;
+  ctx.font = `900 ${Math.round(fontSize * 0.72)}px monospace`;
+  ctx.fillText(`RECORD DUNGEON  //  ${itemCount} LP`, margin + fontSize * 0.7, margin + fontSize);
+  if (featured?.item && featured.distance < 7) {
+    ctx.fillStyle = palette.paper;
+    ctx.font = `800 ${fontSize}px Inter, sans-serif`;
+    ctx.fillText(fitDungeonText(featured.item.title, 34), margin + fontSize * 0.7, margin + fontSize * 2.15);
+    ctx.fillStyle = 'rgba(255, 245, 230, 0.7)';
+    ctx.font = `650 ${Math.round(fontSize * 0.65)}px Inter, sans-serif`;
+    ctx.fillText(fitDungeonText(featured.item.artist, 44), margin + fontSize * 0.7, margin + fontSize * 2.75);
+  }
+  ctx.restore();
+}
+
+function fitDungeonText(value, length) {
+  const text = String(value || '');
+  return text.length > length ? `${text.slice(0, length - 1)}…` : text;
+}
+
+function shortestAngleDelta(from, to) {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
 }
 
 function drawCoverRiver(seconds) {
@@ -1110,6 +1323,7 @@ function modeLabel(mode) {
     poster: 'Image slices',
     river: 'Cover river',
     billboard: 'Billboard rush',
+    dungeon: 'Record dungeon',
     crate: 'Crate flip',
     pile: 'Record pile',
   }[mode] || 'Visual';

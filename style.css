@@ -224,14 +224,14 @@ h2 {
 
 .sample-showcase {
   display: grid;
-  grid-template-columns: minmax(0, 1.22fr) minmax(190px, 0.78fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   min-width: 0;
 }
 
 .sample-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -272,6 +272,10 @@ h2 {
 
 .sample-grid .sample-card {
   aspect-ratio: 16 / 9;
+}
+
+.sample-grid .sample-card.wide {
+  grid-column: 1 / -1;
 }
 
 .sample-card span {
