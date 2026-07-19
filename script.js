@@ -1039,12 +1039,12 @@ function shortestAngleDelta(from, to) {
   return Math.atan2(Math.sin(to - from), Math.cos(to - from));
 }
 
-const KINETIC_TRANSITION_SECONDS = 1.35;
-const KINETIC_HOLD_SECONDS = 0.72;
+const KINETIC_TRANSITION_SECONDS = 0.92;
+const KINETIC_HOLD_SECONDS = 0.53;
 
 function drawCoverKinetics(seconds) {
   const layout = getKineticLayout();
-  if (!layout.length) {
+  if (!layout.covers.length) {
     drawBackground();
     return;
   }
@@ -1053,7 +1053,7 @@ function drawCoverKinetics(seconds) {
   const beatSeconds = KINETIC_TRANSITION_SECONDS + KINETIC_HOLD_SECONDS;
   const beat = Math.floor(seconds / beatSeconds);
   const phaseSeconds = seconds - beat * beatSeconds;
-  const targetIndex = wrapIndex(beat, layout.length);
+  const targetIndex = wrapIndex(beat, layout.scenes.length);
   const transitionAmount = clamp(phaseSeconds / KINETIC_TRANSITION_SECONDS, 0, 1);
   const moving = transitionAmount < 1;
   const samples = moving ? 5 : 1;
@@ -1061,59 +1061,146 @@ function drawCoverKinetics(seconds) {
   for (let sample = samples - 1; sample >= 0; sample -= 1) {
     const trail = samples === 1 ? 0 : sample / (samples - 1);
     const sampleSeconds = Math.max(0, seconds - trail * 0.075);
-    const camera = getKineticCamera(sampleSeconds, layout);
+    const camera = getKineticCamera(sampleSeconds, layout.scenes);
     ctx.save();
     ctx.globalAlpha = samples === 1 ? 1 : 0.22;
-    drawKineticWorld(layout, camera);
+    drawKineticWorld(layout.covers, camera);
     ctx.restore();
   }
 
-  drawKineticFocus(layout[targetIndex], targetIndex, layout.length, moving);
+  drawKineticFocus(layout.scenes[targetIndex], moving, layout.covers.length);
 }
 
 function getKineticLayout() {
   const items = getVisualItems();
-  const key = `${state.username || 'demo'}:${state.visualShuffleSeed}:${items.length}:${items[0]?.release_id || ''}`;
+  const key = `${state.username || 'demo'}:${state.visualShuffleSeed}:${items.length}:${items[0]?.release_id || ''}:${getRecordDurationSeconds()}:${els.format.value}`;
   if (state.kineticLayout?.key === key) {
-    return state.kineticLayout.items;
+    return state.kineticLayout.layout;
   }
 
+  const beatSeconds = KINETIC_TRANSITION_SECONDS + KINETIC_HOLD_SECONDS;
+  const availableScenes = Math.max(1, Math.floor(getRecordDurationSeconds() / beatSeconds));
+  const sceneCount = Math.max(1, Math.min(availableScenes, Math.ceil(items.length / 2)));
+  const groups = makeKineticGroups(items, sceneCount);
   let x = 0;
   let y = 0;
-  let previousSize = 900;
+  let previousRadius = 1400;
   let heading = -0.2;
-  const placed = items.map((item, index) => {
-    const scaleCurve = Math.pow(hashUnit(index, 31), 1.7);
-    const size = lerp(260, 1760, scaleCurve);
-    if (index > 0) {
-      heading += hashSigned(index, 32) * 1.25 + (index % 7 === 0 ? Math.PI * 0.55 : 0);
-      const spacing = (previousSize + size) * 0.72 + 300 + hashUnit(index, 33) * 900;
+  let coverOffset = 0;
+  const scenes = groups.map((group, sceneIndex) => {
+    const composition = composeKineticScene(group, sceneIndex, coverOffset);
+    const radius = Math.hypot(composition.width, composition.height) * 0.55;
+    if (sceneIndex > 0) {
+      heading += hashSigned(sceneIndex, 32) * 1.25 + (sceneIndex % 7 === 0 ? Math.PI * 0.55 : 0);
+      const spacing = previousRadius + radius + 650 + hashUnit(sceneIndex, 33) * 850;
       x += Math.cos(heading) * spacing;
       y += Math.sin(heading) * spacing;
     }
-    previousSize = size;
-    return {
-      item,
+    previousRadius = radius;
+    composition.covers.forEach((cover) => {
+      cover.x += x;
+      cover.y += y;
+    });
+    const scene = {
       x,
       y,
-      size,
-      rotation: hashSigned(index, 34) * 45,
-      depth: hashUnit(index, 35),
+      width: composition.width,
+      height: composition.height,
+      rotation: composition.rotation,
+      covers: composition.covers,
+      startIndex: coverOffset,
     };
+    coverOffset += group.length;
+    return scene;
   });
-  state.kineticLayout = { key, items: placed };
-  return placed;
+  const layout = { scenes, covers: scenes.flatMap((scene) => scene.covers) };
+  state.kineticLayout = { key, layout };
+  return layout;
 }
 
-function getKineticCamera(seconds, layout) {
+function makeKineticGroups(items, sceneCount) {
+  const heroScenes = new Set();
+  for (let index = 0; index < sceneCount; index += 6) {
+    heroScenes.add(index);
+  }
+  if (items.length < sceneCount + heroScenes.size) {
+    heroScenes.clear();
+  }
+
+  const groups = [];
+  let cursor = 0;
+  for (let sceneIndex = 0; sceneIndex < sceneCount; sceneIndex += 1) {
+    const scenesLeft = sceneCount - sceneIndex;
+    const itemsLeft = items.length - cursor;
+    const hero = heroScenes.has(sceneIndex) && itemsLeft > scenesLeft;
+    const count = hero ? 1 : Math.max(1, Math.ceil(itemsLeft / scenesLeft));
+    groups.push(items.slice(cursor, cursor + count));
+    cursor += count;
+  }
+  return groups;
+}
+
+function composeKineticScene(items, sceneIndex, coverOffset) {
+  const count = items.length;
+  const sceneRotation = hashSigned(sceneIndex, 40) * (count === 1 ? 38 : 18);
+  const covers = [];
+  let width;
+  let height;
+
+  if (count === 1) {
+    width = 1600;
+    height = 1600;
+    covers.push(makeKineticCover(items[0], 0, 0, 1600, sceneRotation, coverOffset));
+  } else if (count === 2) {
+    width = 2240;
+    height = 1120;
+    covers.push(makeKineticCover(items[0], -570, 0, 1080, sceneRotation - 7, coverOffset));
+    covers.push(makeKineticCover(items[1], 570, 0, 1080, sceneRotation + 7, coverOffset + 1));
+  } else if (count <= 5) {
+    const size = count === 3 ? 920 : 780;
+    const spread = size * 0.76;
+    width = spread * (count - 1) + size;
+    height = size * 1.38;
+    items.forEach((item, index) => {
+      const centered = index - (count - 1) / 2;
+      const y = Math.abs(centered) * size * 0.12;
+      covers.push(makeKineticCover(item, centered * spread, y, size, sceneRotation + centered * 8, coverOffset + index));
+    });
+  } else {
+    const aspect = els.canvas.width / els.canvas.height;
+    const cols = Math.ceil(Math.sqrt(count * aspect));
+    const rows = Math.ceil(count / cols);
+    const size = clamp(2450 / cols, 250, 620);
+    const gap = size * 0.12;
+    width = cols * size + (cols - 1) * gap;
+    height = rows * size + (rows - 1) * gap;
+    items.forEach((item, index) => {
+      const row = Math.floor(index / cols);
+      const col = index % cols;
+      const rowCount = Math.min(cols, count - row * cols);
+      const rowWidth = rowCount * size + (rowCount - 1) * gap;
+      const localX = -rowWidth / 2 + size / 2 + col * (size + gap);
+      const localY = -height / 2 + size / 2 + row * (size + gap);
+      const tilt = hashSigned(coverOffset + index, 41) * 4;
+      covers.push(makeKineticCover(item, localX, localY, size, sceneRotation + tilt, coverOffset + index));
+    });
+  }
+  return { covers, width, height, rotation: sceneRotation };
+}
+
+function makeKineticCover(item, x, y, size, rotation, collectionIndex) {
+  return { item, x, y, size, rotation, collectionIndex };
+}
+
+function getKineticCamera(seconds, scenes) {
   const beatSeconds = KINETIC_TRANSITION_SECONDS + KINETIC_HOLD_SECONDS;
   const beat = Math.floor(seconds / beatSeconds);
   const phaseSeconds = seconds - beat * beatSeconds;
-  const target = layout[wrapIndex(beat, layout.length)];
-  const previous = beat > 0 ? layout[wrapIndex(beat - 1, layout.length)] : getKineticOpeningCamera(layout[0]);
+  const target = scenes[wrapIndex(beat, scenes.length)];
+  const previous = beat > 0 ? scenes[wrapIndex(beat - 1, scenes.length)] : getKineticOpeningCamera(scenes[0]);
   const amount = easeInOutQuint(clamp(phaseSeconds / KINETIC_TRANSITION_SECONDS, 0, 1));
-  const targetZoom = getKineticTargetZoom(target.size);
-  const previousZoom = previous.zoom ?? getKineticTargetZoom(previous.size);
+  const targetZoom = getKineticTargetZoom(target);
+  const previousZoom = previous.zoom ?? getKineticTargetZoom(previous);
   const targetRotation = (-target.rotation * Math.PI) / 180;
   const previousRotation = previous.rotationRadians ?? (-previous.rotation * Math.PI) / 180;
   return {
@@ -1126,15 +1213,17 @@ function getKineticCamera(seconds, layout) {
 
 function getKineticOpeningCamera(target) {
   return {
-    x: target.x - target.size * 0.32,
-    y: target.y - target.size * 0.22,
-    zoom: getKineticTargetZoom(target.size) * 0.22,
+    x: target.x - target.width * 0.18,
+    y: target.y - target.height * 0.14,
+    zoom: getKineticTargetZoom(target) * 0.28,
     rotationRadians: (-target.rotation * Math.PI) / 180 - 0.34,
   };
 }
 
-function getKineticTargetZoom(size) {
-  return (Math.min(els.canvas.width, els.canvas.height) * 0.72) / size;
+function getKineticTargetZoom(scene) {
+  const horizontal = (els.canvas.width * 0.78) / scene.width;
+  const vertical = (els.canvas.height * 0.72) / scene.height;
+  return Math.min(horizontal, vertical);
 }
 
 function drawKineticWorld(layout, camera) {
@@ -1186,8 +1275,8 @@ function drawKineticBackground() {
   ctx.fillRect(0, 0, width, height);
 }
 
-function drawKineticFocus(cover, index, total, moving) {
-  if (!cover || moving) {
+function drawKineticFocus(scene, moving, total) {
+  if (!scene || moving) {
     return;
   }
   const width = els.canvas.width;
@@ -1199,10 +1288,16 @@ function drawKineticFocus(cover, index, total, moving) {
   ctx.fillStyle = palette.paper;
   ctx.font = `800 ${Math.round(width * 0.022)}px Inter, sans-serif`;
   ctx.textAlign = 'left';
-  ctx.fillText(fitDungeonText(cover.item.title, 38), margin * 1.35, margin * 1.55);
+  const count = scene.covers.length;
+  const featured = scene.covers[0]?.item;
+  const headline = count === 1 ? featured?.title : `${count} RECORDS IN VIEW`;
+  ctx.fillText(fitDungeonText(headline, 38), margin * 1.35, margin * 1.55);
   ctx.fillStyle = 'rgba(255, 245, 230, 0.7)';
   ctx.font = `650 ${Math.round(width * 0.014)}px Inter, sans-serif`;
-  ctx.fillText(`${fitDungeonText(cover.item.artist, 42)}  //  ${index + 1} of ${total}`, margin * 1.35, margin * 2.05);
+  const first = scene.startIndex + 1;
+  const last = scene.startIndex + count;
+  const detail = count === 1 ? featured?.artist : `COLLECTION ${first}–${last} OF ${total}`;
+  ctx.fillText(fitDungeonText(detail, 50), margin * 1.35, margin * 2.05);
   ctx.restore();
 }
 
