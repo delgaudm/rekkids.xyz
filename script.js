@@ -1179,11 +1179,15 @@ function recordMotion() {
   const mode = els.visualMode.value === 'poster' ? 'river' : els.visualMode.value;
   startMotion();
   const stream = els.canvas.captureStream(30);
-  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-    ? 'video/webm;codecs=vp9'
-    : 'video/webm';
+  const recording = createCompatibleRecorder(stream);
+  if (!recording) {
+    stopAnimationFrameOnly();
+    els.exportStatus.textContent = 'This browser could not start a compatible video recorder.';
+    return;
+  }
+  const { recorder, format } = recording;
   state.chunks = [];
-  state.recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8000000 });
+  state.recorder = recorder;
   state.recorder.ondataavailable = (event) => {
     if (event.data.size > 0) {
       state.chunks.push(event.data);
@@ -1194,9 +1198,13 @@ function recordMotion() {
       window.clearTimeout(state.recordingStopTimer);
       state.recordingStopTimer = null;
     }
-    const blob = new Blob(state.chunks, { type: 'video/webm' });
-    downloadBlob(blob, `${slugify(els.title.value)}-${els.visualMode.value}.webm`);
-    els.exportStatus.textContent = 'Video downloaded.';
+    const actualMimeType = state.recorder?.mimeType || format.mimeType;
+    const extension = actualMimeType.startsWith('video/mp4') ? 'mp4' : format.extension;
+    const blob = new Blob(state.chunks, { type: actualMimeType });
+    downloadBlob(blob, `${slugify(els.title.value)}-${els.visualMode.value}.${extension}`);
+    els.exportStatus.textContent = extension === 'mp4'
+      ? 'MP4 downloaded — ready to upload to Reddit.'
+      : 'WebM downloaded. This browser cannot record MP4; try another current browser for Reddit uploads.';
     stopRecordingProgress({ complete: true });
     state.recorder = null;
     stopAnimationFrameOnly();
@@ -1204,13 +1212,42 @@ function recordMotion() {
   };
   state.recorder.start();
   startRecordingProgress(durationSeconds, mode);
-  els.exportStatus.textContent = `Generating a ${durationSeconds}-second video in this browser.`;
+  els.exportStatus.textContent = format.extension === 'mp4'
+    ? `Generating a ${durationSeconds}-second Reddit-ready MP4 in this browser.`
+    : `Generating a ${durationSeconds}-second WebM. This browser does not support MP4 recording.`;
   state.recordingStopTimer = window.setTimeout(() => {
     if (state.recorder && state.recorder.state !== 'inactive') {
       state.recorder.stop();
     }
   }, durationSeconds * 1000);
   updateExportControls();
+}
+
+function createCompatibleRecorder(stream) {
+  const formats = [
+    { mimeType: 'video/mp4;codecs=avc1.42E01E', extension: 'mp4' },
+    { mimeType: 'video/mp4;codecs=avc1', extension: 'mp4' },
+    { mimeType: 'video/mp4', extension: 'mp4' },
+    { mimeType: 'video/webm;codecs=vp9', extension: 'webm' },
+    { mimeType: 'video/webm;codecs=vp8', extension: 'webm' },
+    { mimeType: 'video/webm', extension: 'webm' },
+  ];
+
+  for (const format of formats) {
+    if (typeof MediaRecorder.isTypeSupported === 'function' && !MediaRecorder.isTypeSupported(format.mimeType)) {
+      continue;
+    }
+    try {
+      const recorder = new MediaRecorder(stream, {
+        mimeType: format.mimeType,
+        videoBitsPerSecond: 8000000,
+      });
+      return { recorder, format };
+    } catch (error) {
+      // Some browsers report format support but still reject it for a canvas stream.
+    }
+  }
+  return null;
 }
 
 function updateExportControls() {

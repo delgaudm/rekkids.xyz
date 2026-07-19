@@ -10,7 +10,7 @@ The homepage opens with a live demo and visual samples so visitors can see what 
 
 ![Rekkids homepage with sample visuals](docs/screenshots/homepage-maker.jpg)
 
-The maker view pairs export controls with a live canvas preview for PNG and browser-recorded WebM output.
+The maker view pairs export controls with a live canvas preview for PNG and browser-recorded video output.
 
 ![Rekkids maker export UI showing Billboard Rush](docs/screenshots/export-maker.jpg)
 
@@ -26,7 +26,7 @@ The maker view pairs export controls with a live canvas preview for PNG and brow
   - a Cover River motion preview,
   - a Crate Flip motion preview,
   - a Record Pile motion preview,
-  - client-side WebM recording when supported by the browser.
+  - Reddit-friendly MP4/H.264 recording when supported, with an honest client-side WebM fallback.
 - Keeps a searchable/sortable Browse view for checking the loaded collection.
 
 ## Run Locally
@@ -85,9 +85,9 @@ Rekkids should instead optimize for:
 
 ## Remotion Later
 
-The current motion prototypes are browser canvas/WebM so the site can stay static while the visual language evolves.
+The current motion prototypes use browser canvas recording so the site can stay static while the visual language evolves.
 
-Remotion is a good next step once the visuals are worth hardening into production MP4 exports. Likely future compositions:
+Remotion is a good next step once the visuals are worth hardening into deterministic server-rendered exports. Likely future compositions:
 
 - `CoverRiver`
 - `BillboardRush`
