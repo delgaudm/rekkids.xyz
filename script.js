@@ -17,8 +17,6 @@ const state = {
 };
 
 const els = {
-  count: document.getElementById('collection-count'),
-  artistCount: document.getElementById('artist-count'),
   sourceLabel: document.getElementById('collection-source-label'),
   tabs: document.querySelectorAll('.tab-button'),
   views: document.querySelectorAll('.view'),
@@ -337,10 +335,6 @@ function seededShuffle(items, seedText) {
 }
 
 function updateStats() {
-  const artistTotal = new Set(state.collection.map((item) => item.artist)).size;
-  els.count.textContent = `${state.collection.length} records`;
-  const source = state.username ? `public Discogs: ${state.username}` : 'demo collection';
-  els.artistCount.textContent = `${artistTotal} artists · ${source}`;
   if (els.sourceLabel) {
     els.sourceLabel.textContent = state.username ? `${state.username}'s public collection` : 'Demo collection already loaded';
   }
